@@ -13,7 +13,7 @@ warnings.filterwarnings('ignore')
 
 
 dbscan_distance = 50
-density_thresholds = [1, 3, 4, 10, 15]
+density_thresholds = [1, 3, 5, 10, 15]
 concave_ratios = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99]
 
 
@@ -95,26 +95,41 @@ for density_threshold in density_thresholds:
         super_parcels['geometry'] = super_parcels['geometry'].apply(lambda x: concave_hull(x, ratio=concave_ratio))
 
 
+        try:
+            for idx, parcel in super_parcels.iterrows():
+                print(f'Cleaning super parcel: {parcel["cluster_ID"]}')
+                parcel_geom = gpd.GeoDataFrame(geometry=[parcel.geometry])
+                parcel_id = parcel['cluster_ID']    
 
-        for idx, parcel in super_parcels.iterrows():
-            parcel_geom = gpd.GeoDataFrame(geometry=[parcel.geometry])
-            parcel_id = parcel['cluster_ID']    
-            other_sp = super_parcels.loc[super_parcels['cluster_ID'] != parcel_id]
-            other_union = gpd.GeoDataFrame(geometry=[other_sp.unary_union])
-            parcel_clip = (gpd.overlay(parcel_geom, other_union, how='difference')
-                            .explode(ignore_index=True)
-                            .reset_index(drop=True))
-            parcel_clip['cluster_ID'] = parcel_id
-            parcel_clip['OWNER'] = parcel['OWNER']
-            # drop correspnding row in super_parcels
-            super_parcels = super_parcels[super_parcels['cluster_ID'] != parcel_id]
-            # add parcel clip to super_parcels
-            super_parcels = pd.concat([super_parcels, parcel_clip], ignore_index=True)
+                other_sp = super_parcels.loc[super_parcels['cluster_ID'] != parcel_id]
+                other_single = single_parcel_data.loc[single_parcel_data['cluster_ID'] != parcel_id]
+                other_sp_union = gpd.GeoDataFrame(geometry=[other_sp.unary_union])
+                other_single_union = gpd.GeoDataFrame(geometry=[other_single.unary_union])
+                other_union = pd.concat([other_sp_union, other_single_union], ignore_index=True)
+
+                parcel_clip = (gpd.overlay(parcel_geom, other_union, how='difference')
+                                .explode(ignore_index=True)
+                                .reset_index(drop=True))
+                                
+                parcel_clip['cluster_ID'] = parcel_id
+                parcel_clip['OWNER'] = parcel['OWNER']
+                # drop correspnding row in super_parcels
+                super_parcels = super_parcels[super_parcels['cluster_ID'] != parcel_id]
+                # add parcel clip to super_parcels
+                super_parcels = pd.concat([super_parcels, parcel_clip], ignore_index=True)
             
+            super_parcels['cr'] = concave_ratio
+            super_parcels['dt'] = density_threshold
+
+            super_parcels = super_parcels.explode(ignore_index=True)
+            super_parcels['sp_ID'] = super_parcels['cluster_ID'] + "_" + super_parcels.groupby('cluster_ID').cumcount().astype(str) 
 
 
-        super_parcels['cr'] = concave_ratio
-        super_parcels['dt'] = density_threshold
-        
-        super_parcels[['cluster_ID', 'OWNER', 'geometry']].to_file(os.path.join(output_dir, f'sp_dbscan{dbscan_distance}-cr{concave_ratio}-dens{density_threshold}.shp'))
-        print('______________________________________________________________________________________')
+            super_parcels[['sp_ID', 'cluster_ID', 'OWNER', 'geometry']].to_file(os.path.join(output_dir, f'sp_dbscan{dbscan_distance}-cr{concave_ratio}-dens{density_threshold}.shp'))
+            print('______________________________________________________________________________________')
+                
+        except Exception as e:
+            print('Error:', e)
+            super_parcels[['cluster_ID', 'OWNER', 'geometry']].to_file(os.path.join(output_dir, f'sp_dbscan{dbscan_distance}-cr{concave_ratio}-dens{density_threshold}_FAILED.shp'))
+            print('______________________________________________________________________________________')
+            
