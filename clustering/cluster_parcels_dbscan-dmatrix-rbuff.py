@@ -34,13 +34,12 @@ def compute_distance_matrix(polygons):
     return distance_matrix
 
 
-data_dir = r'D:\Projects\superparcels\data\Rural'
+data_dir = r'D:\Projects\superparcels\data\Urban'
 
 for fi in glob.glob(os.path.join(data_dir, '*\*canidates.shp')):
     fips = os.path.basename(fi).split('_')[2]
     subdir = os.path.dirname(fi)
-    if fips == '06001':
-        continue
+
     print(f'Processing {os.path.basename(subdir)}: {fips}...')
    
   
@@ -54,8 +53,8 @@ for fi in glob.glob(os.path.join(data_dir, '*\*canidates.shp')):
 
     clustered_parcel_data = gpd.GeoDataFrame()
     single_parcel_data = gpd.GeoDataFrame()
-    cluster_counts_dict = {}
     for owner in tqdm(unique_owners, desc=f'{fips} Owners: ', ncols=100):
+        
         dbscan_distance = 200
         owner_parcels = parcels[parcels['OWNER'] == owner]
         polygons = owner_parcels['geometry'].to_list()
@@ -74,6 +73,8 @@ for fi in glob.glob(os.path.join(data_dir, '*\*canidates.shp')):
         counts = owner_parcels['cluster'].value_counts()
         
         outliers = counts[counts.index == -1].index
+        # drop outliers
+        counts = counts[counts.index != -1]
         single_parcel_filter_ids = set(list(outliers))
             
         single_parcel_filter = owner_parcels[owner_parcels['cluster'].isin(single_parcel_filter_ids)]
@@ -81,7 +82,7 @@ for fi in glob.glob(os.path.join(data_dir, '*\*canidates.shp')):
         
         cluster_filter = owner_parcels[~owner_parcels['cluster'].isin(single_parcel_filter_ids)]
         if len(cluster_filter) > 0:
-            cluster_counts_dict[owner] = sum(counts.to_list())
+            cluster_filter['pcount'] = cluster_filter['cluster'].map(counts)
             cluster_filter['buff_dist'] = dbscan_distance
             clustered_parcel_data = pd.concat([clustered_parcel_data, cluster_filter], ignore_index=True)
       
@@ -95,7 +96,6 @@ for fi in glob.glob(os.path.join(data_dir, '*\*canidates.shp')):
 
     clustered_parcel_data['cluster_ID'] = clustered_parcel_data['OWNER'] + '_' + clustered_parcel_data['cluster'].astype(str)
     single_parcel_data['cluster_ID'] = single_parcel_data['OWNER'] + '_' + single_parcel_data['cluster'].astype(str)
-    clustered_parcel_data['pcount'] = clustered_parcel_data['OWNER'].map(cluster_counts_dict)
 
     parcel_dissolve = clustered_parcel_data.dissolve(by='cluster_ID').reset_index()
     parcel_dissolve['area'] = parcel_dissolve['geometry'].area # total area of the cluster
@@ -115,6 +115,8 @@ for fi in glob.glob(os.path.join(data_dir, '*\*canidates.shp')):
 
     super_parcels['sp_id'] = super_parcels['cluster_ID'] + "_" + super_parcels.groupby('cluster_ID').cumcount().astype(str) 
     super_parcels['rank'] = super_parcels['area'].rank(ascending=False)
+    super_parcels = super_parcels.sort_values(by='rank', ascending=True)
+    super_parcels = super_parcels.reset_index(drop=True)
 
     def num_2_short_form(number):
         if number >= 1_000_000_000:
@@ -128,8 +130,6 @@ for fi in glob.glob(os.path.join(data_dir, '*\*canidates.shp')):
 
     super_parcels['sq_meters'] = super_parcels['area'].apply(num_2_short_form)
     super_parcels = super_parcels[['sp_id', 'OWNER', 'area', 'sq_meters', 'rank', 'pcount', 'buff_dist', 'geometry']]
-
-    
 
     if len(single_parcel_data) > 0:
         single_parcel_data.to_file(os.path.join(subdir, f'singles_{fips}_dbscan{dbscan_distance}-{sample_size}_area{area_threshold}_rbuff.shp'))
