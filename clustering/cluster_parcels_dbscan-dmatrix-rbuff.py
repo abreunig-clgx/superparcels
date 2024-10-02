@@ -12,9 +12,17 @@ from tqdm import tqdm
 import warnings
 warnings.filterwarnings('ignore')
 
+"""
+This script clusters parcels based on a distance matrix. The distance matrix is calculated using the minimum distance between two polygons.
+The script uses the DBSCAN algorithm to cluster parcels. The script also identifies super parcels based on a threshold area.
+The script also creates a reverse buffer to ensure that the super parcel is a tight boundary.
 
+sample_size: minimum number of parcels required to form a cluster
+area_threshold: minimum area required to form a super parcel
+"""
 sample_size = 3
 area_threshold = 300_000
+data_dir = r'D:\Projects\superparcels\data\Urban'
 
 def polygon_distance(polygon1, polygon2):
     # Calculate the minimum distance between two polygons
@@ -34,91 +42,98 @@ def compute_distance_matrix(polygons):
     return distance_matrix
 
 
-data_dir = r'D:\Projects\superparcels\data\Urban'
-
 for fi in glob.glob(os.path.join(data_dir, '*\*canidates.shp')):
     fips = os.path.basename(fi).split('_')[2]
     subdir = os.path.dirname(fi)
 
     print(f'Processing {os.path.basename(subdir)}: {fips}...')
    
-  
     parcels = gpd.read_file(fi)
-
 
     utm = parcels.estimate_utm_crs().to_epsg()
     parcels = parcels.to_crs(epsg=utm)  
 
     unique_owners = parcels['OWNER'].unique()
 
-    clustered_parcel_data = gpd.GeoDataFrame()
-    single_parcel_data = gpd.GeoDataFrame()
+    clustered_parcel_data = gpd.GeoDataFrame() # cluster data
+    single_parcel_data = gpd.GeoDataFrame() # non-clustered data
     for owner in tqdm(unique_owners, desc=f'{fips} Owners: ', ncols=100):
-        
-        dbscan_distance = 200
-        owner_parcels = parcels[parcels['OWNER'] == owner]
-        polygons = owner_parcels['geometry'].to_list()
+        dbscan_distance = 200 # max distance threshold
+
+        owner_parcels = parcels[parcels['OWNER'] == owner] # ownder specific parcels
+        polygons = owner_parcels['geometry'].to_list() # list of polygon geometries
         distance_matrix = compute_distance_matrix(polygons)
         
         if distance_matrix.shape[0] < 3: # only two parcels
             continue
 
-        if np.all(distance_matrix == 0): # get distance greater than 0 but minimum distance
-            dbscan_distance = 3
+        if np.all(distance_matrix == 0): # if all adjacent parcels (i.e. zero-distances), then set distance to 1
+            dbscan_distance = 1
         
         dbscan = DBSCAN(eps=dbscan_distance, min_samples=sample_size, metric='precomputed')
         clusters = dbscan.fit_predict(distance_matrix)
-        owner_parcels['cluster'] = clusters 
+
+        owner_parcels['cluster'] = clusters # clustert ID
         owner_parcels['area'] = owner_parcels['geometry'].area
-        counts = owner_parcels['cluster'].value_counts()
+        counts = owner_parcels['cluster'].value_counts() # pd.series of cluster counts
         
-        outliers = counts[counts.index == -1].index
-        # drop outliers
-        counts = counts[counts.index != -1]
-        single_parcel_filter_ids = set(list(outliers))
+        outliers = counts[counts.index == -1].index # outliers always identified as -1
+        counts = counts[counts.index != -1] # drop outliers
+
+        single_parcel_filter_ids = set(list(outliers)) # not apart of any cluster
             
         single_parcel_filter = owner_parcels[owner_parcels['cluster'].isin(single_parcel_filter_ids)]
         single_parcel_data = pd.concat([single_parcel_data, single_parcel_filter], ignore_index=True)
         
         cluster_filter = owner_parcels[~owner_parcels['cluster'].isin(single_parcel_filter_ids)]
         if len(cluster_filter) > 0:
-            cluster_filter['pcount'] = cluster_filter['cluster'].map(counts)
-            cluster_filter['buff_dist'] = dbscan_distance
+            cluster_filter['pcount'] = cluster_filter['cluster'].map(counts) # add parcel count to filter dataframe
+            cluster_filter['buff_dist'] = dbscan_distance # dbscan distane is euivalent to the required buffer distance
             clustered_parcel_data = pd.concat([clustered_parcel_data, cluster_filter], ignore_index=True)
       
 
-    # create cluster ID
     # create cluster ID
     if len(clustered_parcel_data) == 0:
         continue
 
     print(f'Cluster Dataframe {fips}: {clustered_parcel_data.shape}')
 
+    # build cluster specific IDs
     clustered_parcel_data['cluster_ID'] = clustered_parcel_data['OWNER'] + '_' + clustered_parcel_data['cluster'].astype(str)
     single_parcel_data['cluster_ID'] = single_parcel_data['OWNER'] + '_' + single_parcel_data['cluster'].astype(str)
 
+    # dissolve clusters. This will union any adjacent parcels and/or create a multi-polygon
     parcel_dissolve = clustered_parcel_data.dissolve(by='cluster_ID').reset_index()
+
     parcel_dissolve['area'] = parcel_dissolve['geometry'].area # total area of the cluster
 
-    mean_area = parcel_dissolve.groupby('cluster_ID')['area'].mean()
-    super_parcel_ids = mean_area[mean_area > area_threshold].index
+    mean_area = parcel_dissolve.groupby('cluster_ID')['area'].mean() # mean area of the cluster
+    super_parcel_ids = mean_area[mean_area > area_threshold].index # ids of clusters with mean area greater than threshold
 
     super_parcels = parcel_dissolve[parcel_dissolve['cluster_ID'].isin(super_parcel_ids)]
     if len(super_parcels) == 0:
         print(f'No super parcels found for {fips}')
-        print(super_parcels['area'].sort_values(ascending=False))
+        print(parcel_dissolve['area'].sort_values(ascending=False))
         continue
 
+    # reverse buffer. This enable the enclosing of the super parcel, removing any gaps between adjacent parcels and obtaining a tight boundary
     super_parcels['geometry'] = super_parcels['geometry'].buffer(dbscan_distance)
     super_parcels['geometry'] = super_parcels['geometry'].buffer(-dbscan_distance)
-    super_parcels = super_parcels.explode(ignore_index=True)
+    super_parcels = super_parcels.explode(ignore_index=True) # ensure that the super parcels are single polygons
 
+    # super parcel ID eg. owner + cluster ID + ID of each unique super parcel
     super_parcels['sp_id'] = super_parcels['cluster_ID'] + "_" + super_parcels.groupby('cluster_ID').cumcount().astype(str) 
-    super_parcels['rank'] = super_parcels['area'].rank(ascending=False)
+    
+    # rank super parcels by area
+    super_parcels['rank'] = super_parcels['area'].rank(ascending=False) 
     super_parcels = super_parcels.sort_values(by='rank', ascending=True)
     super_parcels = super_parcels.reset_index(drop=True)
 
     def num_2_short_form(number):
+        """
+        Short form text creation for 
+        display purposes
+        """
         if number >= 1_000_000_000:
             return f'{number/1_000_000_000:.1f}B'
         elif number >= 1_000_000:
@@ -133,9 +148,6 @@ for fi in glob.glob(os.path.join(data_dir, '*\*canidates.shp')):
 
     if len(single_parcel_data) > 0:
         single_parcel_data.to_file(os.path.join(subdir, f'singles_{fips}_dbscan{dbscan_distance}-{sample_size}_area{area_threshold}_rbuff.shp'))
-
-
-    
 
     super_parcels.to_file(os.path.join(subdir, f'sp_{fips}_dbscan{dbscan_distance}-{sample_size}_area{area_threshold}_rbuff.shp'))
     print('_________________________________________________________')
