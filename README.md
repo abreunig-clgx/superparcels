@@ -37,7 +37,7 @@ Before applying the clustering methodologies, it is essential to filter the data
 #### Urban AOIs
 
 San Francisco County, CA
-
+<img src="Images\Urban\san_fran_parcel_candi.png" width="1000" />
 ![](Images\Urban\san_fran_parcel_candi.png)
 
 Alameda County, CA
