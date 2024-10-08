@@ -143,4 +143,4 @@ Preprocessing for Candidate Parcels:
 
 <img src="Images\Rural\Rusk_WI_map150.png" width="1000" />
 
-<img src="Images\Rural\Sierra_NM_map150.png" width="1000" />
+<img src="Images\Rural\Sierra_NM_Map150.png" width="1000" />
