@@ -38,32 +38,29 @@ Before applying the clustering methodologies, it is essential to filter the data
 
 San Francisco County, CA
 <img src="Images\Urban\san_fran_parcel_candi.png" width="1000" />
-![](Images\Urban\san_fran_parcel_candi.png)
 
 Alameda County, CA
-
-![](Images\Urban\alameda_parcel_candi.png)
+<img src="Images\Urban\alameda_parcel_candi.png" width="1000" />
 
 Denver County, CO  
-![](Images\Urban\denver_parcel_candi.png)
+<img src="Images\Urban\denver_parcel_candi.png" width="1000" />
 
 Dallas County, TX  
-![](Images\Urban\dallas_parcel_candi.png)
+<img src="Images\Urban\dallas_parcel_candi.png" width="1000" />
 
 #### Rural AOIs
 
 Rusk County, WI
-
-![](Images\Rural\rusk_wi_parcel_candi.png)
+<img src="Images\Rural\rusk_wi_parcel_candi.png" width="1000" />
 
 Kiowa County, KS  
-![](Images\Rural\kiowa_ks_parcel_candi.png)
+<img src="Images\Rural\kiowa_ks_parcel_candi.png" width="1000" />
 
 Crook County, OR  
-![](Images\Rural\crook_or_parcel_candi.png)
+<img src="Images\Rural\crook_or_parcel_candi.png" width="1000" />
 
 Sierra County, NM  
-![](Images\Rural\sierra_nm_parcel_candi.png)
+<img src="Images\Rural\sierra_nm_parcel_candi.png" width="1000" />
 
 ### DBSCAN Clustering \+ Distance Matrix \+ Reverse Buffer
 
@@ -136,14 +133,14 @@ Preprocessing for Candidate Parcels:
 
 ### Maps
 
-![](Images\Urban\Alameda_map150.png)
+<img src="Images\Urban\Alameda_map150.png" width="1000" />
 
-![](Images\Urban\Dallas_map150.png)  
+<img src="Images\Urban\Dallas_map150.png" width="1000" /> 
 
-![](Images\Rural\Crook_OR_map150.png)  
+<img src="Images\Rural\Crook_OR_map150.png" width="1000" />  
 
-![](Images\Rural\Kiowa_KS_map150.png) 
+<img src="Images\Rural\Kiowa_KS_map150.png" width="1000" />
 
-![](Images\Rural\Rusk_WI_map150.png)
+<img src="Images\Rural\Rusk_WI_map150.png" width="1000" />
 
-![](Images\Rural\Sierra_NM_Map150.png)
+<img src="Images\Rural\Sierra_NM_map150.png" width="1000" />
