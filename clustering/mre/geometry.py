@@ -122,18 +122,22 @@ class Map():
             color = getattr(obj, 'color', 'blue')
             alpha = getattr(obj, 'alpha', 0.5)
             geom = getattr(obj, 'geometry', None)
+            linewidth = getattr(obj, 'linewidth', 0.5)
+            linestyle = getattr(obj, 'linestyle', '-')
+            edgecolor = getattr(obj, 'edgecolor', 'black')
             label = getattr(obj, 'label', None)
+            label_color = getattr(obj, 'label_color', 'black')
             
 
             if isinstance(geom, Polygon):
                 x, y = geom.exterior.xy
                 if alpha == 0:
-                    plt.plot(x, y, color='black', linewidth=0.8)
+                    plt.plot(x, y, color=edgecolor, linewidth=linewidth, linestyle=linestyle)
 
-                plt.fill(x, y, color=color, alpha=alpha, linewidth=0.5, edgecolor='black')
+                plt.fill(x, y, facecolor=color, alpha=alpha, linewidth=linewidth, linestyle=linestyle, edgecolor=edgecolor)
                 if label:
                     centroid = geom.centroid
-                    plt.text(centroid.x, centroid.y, label, fontsize=10)
+                    plt.text(centroid.x, centroid.y, label, fontsize=10, color=label_color)
 
             elif isinstance(geom, LineString):
                 x, y = geom.xy
@@ -158,18 +162,20 @@ class Map():
         self, 
         gdf: gpd.GeoDataFrame, 
         label: Optional[List[str]] = None,
-        color: Optional[str] = 'blue', 
-        alpha: Optional[float] = 0.5
+        **kwargs
         ):
-
-        
         for _, row in gdf.iterrows():
             geom = row.geometry
             shape = Vector(geom)
-            shape.color = color
-            shape.alpha = alpha
+
+            # Apply styling from kwargs
+            for key, value in kwargs.items():
+                setattr(shape, key, value)
+
+            # Set label if provided
             shape.label = row[label] if label else None
-            
+
+            # Add the shape to the collection
             self.add_shape(shape)
 
     def remove(
