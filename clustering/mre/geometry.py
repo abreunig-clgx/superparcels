@@ -180,7 +180,12 @@ class Map():
 
     def remove(
         self, 
-        shape: BaseGeometry
+        gdf: gpd.GeoDataFrame,
+        **kwargs
         ):
-        self.shapes.remove(shape)
+        for _, row in gdf.iterrows():
+            geom = row.geometry
+            for shape in self.shapes:
+                if shape.geometry == geom:
+                    self.shapes.remove(shape)
     
