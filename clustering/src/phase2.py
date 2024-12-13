@@ -112,3 +112,8 @@ def merge_cross_region_clusters(df, max_merge_distance=4):
             df.loc[df['cluster_ID'] == cluster_j, 'cluster_ID'] = cluster_i
 
     return df
+
+def add_attributes(df, **kwargs):
+    for key, value in kwargs.items():
+        df[key] = value
+    return df
