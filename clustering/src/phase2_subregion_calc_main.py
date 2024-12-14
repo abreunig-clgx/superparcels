@@ -8,8 +8,9 @@ import sys
 import pandas as pd
 import geopandas as gpd
 from tqdm import tqdm
+from shapely.geometry import MultiPoint
 cluster_method = 'dbscan' # cluster method
-max_parcels_per_cluster = 100 # maximum number of parcels per cluster
+max_parcels_per_cluster = 500 # maximum number of parcels per cluster
 min_samples = 5 # minimum number of samples required to form a cluster
 sample_size = 10 # clusters must have at least 3 parcels
 min_cluster_size = 50 # minimum number of parcels required to form a cluster
@@ -60,28 +61,40 @@ for place_id, place_data in place_gdf.iterrows():
         single_parcel_data = gpd.GeoDataFrame()
         
         regional_parcels = sub_parcels[sub_parcels['regions'] == region]
-        
-        regional_singles = []
-        if len(regional_parcels) == 1:
-            regional_singles.append(regional_parcels)
-            continue
-    
-        print('Computing distance matrix...')
-        distances = compute_distance_matrix(sub_parcels.geometry.to_list())
-        print('Computing density...')
-        density = compute_density(distances, len(sub_parcels))
-        print('Computing n_neighbors...')
-        min_nneighbors = max(0.1 * len(sub_parcels), 3) # 10% of the total number of parcels
-        n_neighbors = compute_nneighbors(density, min_nneighbors)
+        regional_parcels_centroid = regional_parcels.centroid
+        regional_parcels_coords = list(zip(regional_parcels_centroid.x, regional_parcels_centroid.y))
+        parcel_count = len(regional_parcels)
+        regional_area = MultiPoint(regional_parcels_coords).convex_hull.area 
+        print(f"Region {region} has {parcel_count} parcels")
+        print(f"Region {region} area: {regional_area}")
+        density = parcel_count / regional_area
 
-        optimal_distance, knn_optimal_distance = compute_optimal_distance(distances, n_neighbors, min_urban_distance, max_distance)
+        print('Computing KDTree...')
+        dtree = cKDTree(regional_parcels_coords)
+        print('Computing density...')
+        
+        n_neighbors = compute_nneighbors(density)
+
+        print('Computing optimal distance...')
+        knn_distances, _ = dtree.query(regional_parcels_coords, k=n_neighbors)
+        sorted_distances = np.sort(knn_distances[:, -1])
+        smooth_dist = uniform_filter1d(sorted_distances, size=10)
+        difference = np.diff(smooth_dist)
+        elbow_index = np.argmax(difference) + 1
+        # take distance from KNN elbow --> must be greater than min_urban_distance and less than max_distance
+        knn_optimal_distance = smooth_dist[elbow_index]
+        if knn_optimal_distance > 30:
+            optimal_distance = 30
+        #optimal_distance = min(max(ceil(knn_optimal_distance), min_urban_distance), max_distance)
+
         print(f'Density for Place {place_id}, Region {region}: {density}')
-        print(f'Min N Neighbors for Place {place_id}, Region {region}: {min_nneighbors}')
+        #print(f'Min N Neighbors for Place {place_id}, Region {region}: {min_nneighbors}')
         print(f'N Neighbors for Place {place_id}, Region {region}: {n_neighbors}')
         print(f'KNN distance for Place {place_id}, Region {region}: {knn_optimal_distance}')
         print(f"Optimal distance for Place {place_id}, Region {region}: {optimal_distance}")
         print('________________________________________________________')
-        continue    
+            
+    
         unique_owners = sub_parcels['OWNER'].unique()
         clustered_parcel_data = gpd.GeoDataFrame()
         single_parcel_data = gpd.GeoDataFrame()
@@ -91,7 +104,14 @@ for place_id, place_data in place_gdf.iterrows():
             #print(f"Owner {owner} has {len(owner_parcels)} parcels")
             polygons = owner_parcels['geometry'].to_list()
             distance_matrix = compute_distance_matrix(polygons)
+
             if distance_matrix.shape[0] < 3: # only two parcels
+                
+                single_parcel_data = pd.concat([single_parcel_data, owner_parcels], ignore_index=True)  
+                single_parcel_data = add_attributes(
+                    single_parcel_data,
+                    place_id=place_id,
+                    )
                 continue
 
             dbscan = DBSCAN(eps=optimal_distance, min_samples=sample_size, metric='precomputed')
@@ -106,33 +126,56 @@ for place_id, place_data in place_gdf.iterrows():
 
             single_parcel_filter_ids = set(list(outliers)) # not apart of any cluster
                 
-            single_parcel_filter = owner_parcels[owner_parcels['cluster'].isin(single_parcel_filter_ids)]
+            single_parcel_filter = owner_parcels[owner_parcels['cluster'].isin(single_parcel_filter_ids)].drop(columns=['cluster', 'area'])
             single_parcel_data = pd.concat([single_parcel_data, single_parcel_filter], ignore_index=True)
             
+            if len(single_parcel_filter) > 0:
+                single_parcel_filter = add_attributes(
+                    single_parcel_filter,
+                    place_id=place_id,
+                )
+
             cluster_filter = owner_parcels[~owner_parcels['cluster'].isin(single_parcel_filter_ids)]
             if len(cluster_filter) > 0:
-                cluster_filter['pcount'] = cluster_filter['cluster'].map(counts) # add parcel count to filter dataframe
-                cluster_filter['knn_dst'] = knn_optimal_distance
-                cluster_filter['opt_dst'] = optimal_distance # dbscan distane is euivalent to the required buffer distance
-                cluster_filter['place_id'] = place_id
+                cluster_filter = add_attributes(
+                    cluster_filter,
+                    pcount=cluster_filter['cluster'].map(counts),
+                    knn_dst=knn_optimal_distance,
+                    opt_dst=optimal_distance,
+                    place_id=place_id
+                )
                 clustered_parcel_data = pd.concat([clustered_parcel_data, cluster_filter], ignore_index=True)
 
-        # create cluster ID
         if len(clustered_parcel_data) != 0:
-            clustered_parcel_data['cluster_ID'] = clustered_parcel_data['OWNER'] + '_' + str(place_id) + '_' + clustered_parcel_data['cluster'].astype(str)
-            all_clustered_parcel_data = pd.concat([all_clustered_parcel_data, clustered_parcel_data], ignore_index=True)
+            clustered_parcel_data['cluster_ID'] = (
+                clustered_parcel_data['OWNER'] + 
+                '_' + 
+                str(place_id) +
+                '-' +
+                str(region) +
+                '-' + 
+                clustered_parcel_data['cluster'].astype(str)
+            )
+
+        if len(single_parcel_data) != 0:
+            #print(f'single parcel data: region:{region}, owner:{owner}')
+            single_parcel_data['cluster_ID'] = (
+                single_parcel_data['OWNER'] + 
+                '_' + 
+                str(place_id) +
+                '-' +
+                str(region) +
+                '-' +
+                'X'
+            )
+        print('________________________________')
+                
+        all_clustered_parcel_data = pd.concat([all_clustered_parcel_data, clustered_parcel_data], ignore_index=True)
         all_single_parcel_data = pd.concat([all_single_parcel_data, single_parcel_data], ignore_index=True)
 
-            
-
-    
-
-    print('________________________________________________________')
-    
+print('________________________________________________________')
 
 parcel_dissolve = all_clustered_parcel_data.dissolve(by='cluster_ID').reset_index()
-parcel_dissolve
-
 
 parcel_dissolve['geometry'] = parcel_dissolve.apply(lambda x: x['geometry'].buffer(x['opt_dst']), axis=1)
 parcel_dissolve['geometry'] = parcel_dissolve.apply(lambda x: x['geometry'].buffer(-x['opt_dst']), axis=1)
@@ -151,12 +194,12 @@ for single_id, single_data in all_single_parcel_data.iterrows():
         continue
 
     same_owner_ncluster = same_owner_nclusters.loc[same_owner_nclusters['cross_dist'].idxmin(), 'cluster_ID']
-   
+
     add_single = all_single_parcel_data[all_single_parcel_data.index == single_id][['OWNER', 'geometry']]
     merge_n = all_clustered_parcel_data[all_clustered_parcel_data['cluster_ID'] == same_owner_ncluster]
     all_clustered_parcel_data = all_clustered_parcel_data[all_clustered_parcel_data['cluster_ID'] != same_owner_ncluster]
 
-    same_owner_merge = pd.concat([same_owner_n, add_single], ignore_index=True).drop(columns=['cross_dist'])
+    same_owner_merge = pd.concat([merge_n, add_single], ignore_index=True)
     new_row_index = same_owner_merge.index[-1]
     source_row_index = same_owner_merge.index[0]
     for col in same_owner_merge.columns:
@@ -170,9 +213,13 @@ all_clustered_parcel_data_merged = merge_cross_region_clusters(all_clustered_par
 
 
 parcel_dissolve_merge = all_clustered_parcel_data_merged.dissolve(by='cluster_ID').reset_index()
-parcel_dissolve_merge
 
 
 parcel_dissolve_merge['geometry'] = parcel_dissolve_merge.apply(lambda x: x['geometry'].buffer(x['opt_dst']), axis=1)
 parcel_dissolve_merge['geometry'] = parcel_dissolve_merge.apply(lambda x: x['geometry'].buffer(-x['opt_dst']), axis=1)
+
+parcel_dissolve_merge.to_file(
+    os.path.join(
+        data_dir, 
+        f'place_{place_id}_superparcels.shp'))
 

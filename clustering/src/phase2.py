@@ -33,13 +33,16 @@ def compute_density(dmatrix, num_parcels):
     density = num_parcels / np.ptp(dmatrix) 
     return density
 
-def compute_nneighbors(density, min_nneighbors):
+def compute_nneighbors(density, min_k=3, max_k=10, C=100):
     """
-    Scales the number of N Neighbors based on the density of the Region. 
-    Takes the minimum of the computed value or the total number of parcels - 1
+    Calculate the number of neighbors for the KNN algorithm.
+    The number of neighbors is inversely proportional to the density of the data.
+    The number of neighbors is constrained to be between min_nneighbors and max_n.
+
     """
-    n_neighbors = max(1, int(min_nneighbors / density))
-    return n_neighbors
+    # Calculate k inversely proportional to density, with some bounds
+    k = max(min_k, min(max_k, int(C / density)))
+    return k
 
 def compute_optimal_distance(dmatrix, n_neighbors, min_urban_distance, max_distance):
     """
