@@ -9,13 +9,12 @@ import pandas as pd
 import geopandas as gpd
 from tqdm import tqdm
 from shapely.geometry import MultiPoint
-cluster_method = 'dbscan' # cluster method
-max_parcels_per_cluster = 500 # maximum number of parcels per cluster
-min_samples = 5 # minimum number of samples required to form a cluster
-sample_size = 10 # clusters must have at least 3 parcels
+
+max_parcels_per_cluster = 50 # maximum number of parcels per cluster
+sample_size = 3 # clusters must have at least 3 parcels
 min_cluster_size = 50 # minimum number of parcels required to form a cluster
-min_urban_distance = 100 # min. distance between two likely neighbors
 max_distance = 200 # max. distance between two likely neighbors
+smoothing_window = 0.5 # smoothing window for distance matrix
 
 data_dir = r'D:\Projects\superparcels\data\phase2'
 print('Reading data...')
@@ -44,12 +43,12 @@ for place_id, place_data in place_gdf.iterrows():
     sub_parcel_coords = list(zip(sub_parcel_centroids.x, sub_parcel_centroids.y))
     regions = kmeans.fit_predict(sub_parcel_coords)
     sub_parcels['regions'] = regions
-    #print('writing regions to file...') 
-    #sub_parcels.to_file(
-    #    os.path.join(
-    #        data_dir, 
-    #        f'place_{place_id}_regions_kmeans_{max_parcels_per_cluster}.shp'))
-    #print('________________________________________________________')
+    print('writing regions to file...') 
+    sub_parcels.to_file(
+        os.path.join(
+            data_dir, 
+            f'place_{place_id}_regions_kmeans_{max_parcels_per_cluster}.shp'))
+    print('________________________________________________________')
     #sys.exit()
     # sorted
     region_list = sorted(sub_parcels['regions'].unique())
@@ -63,41 +62,41 @@ for place_id, place_data in place_gdf.iterrows():
         regional_parcels = sub_parcels[sub_parcels['regions'] == region]
         regional_parcels_centroid = regional_parcels.centroid
         regional_parcels_coords = list(zip(regional_parcels_centroid.x, regional_parcels_centroid.y))
-        parcel_count = len(regional_parcels)
-        regional_area = MultiPoint(regional_parcels_coords).convex_hull.area 
-        print(f"Region {region} has {parcel_count} parcels")
-        print(f"Region {region} area: {regional_area}")
-        density = parcel_count / regional_area
 
+        parcel_count = len(regional_parcels)
+        print(f"Region {region} has {parcel_count} parcels")
+
+        if parcel_count < sample_size: # kmeans cluster has less than 3 parcels
+            print(f"Region {region} has less than {sample_size} parcels")
+            single_parcel_data = pd.concat([single_parcel_data, regional_parcels], ignore_index=True)  
+            single_parcel_data = add_attributes(
+                single_parcel_data,
+                place_id=place_id,
+                )
+            continue
+       
         print('Computing KDTree...')
         dtree = cKDTree(regional_parcels_coords)
-        print('Computing density...')
-        
-        n_neighbors = compute_nneighbors(density)
 
         print('Computing optimal distance...')
-        knn_distances, _ = dtree.query(regional_parcels_coords, k=n_neighbors)
-        sorted_distances = np.sort(knn_distances[:, -1])
-        smooth_dist = uniform_filter1d(sorted_distances, size=10)
-        difference = np.diff(smooth_dist)
-        elbow_index = np.argmax(difference) + 1
-        # take distance from KNN elbow --> must be greater than min_urban_distance and less than max_distance
-        knn_optimal_distance = smooth_dist[elbow_index]
-        if knn_optimal_distance > 30:
-            optimal_distance = 30
-        #optimal_distance = min(max(ceil(knn_optimal_distance), min_urban_distance), max_distance)
+        knn_distances, _ = dtree.query(regional_parcels_coords, k=sample_size + 1)
 
-        print(f'Density for Place {place_id}, Region {region}: {density}')
-        #print(f'Min N Neighbors for Place {place_id}, Region {region}: {min_nneighbors}')
-        print(f'N Neighbors for Place {place_id}, Region {region}: {n_neighbors}')
+        sorted_distances = np.sort(knn_distances[:, -1])
+        smooth_dist = uniform_filter1d(sorted_distances, size=ceil(smoothing_window*parcel_count))
+        difference = np.diff(smooth_dist)
+        # second derivative
+        second_difference = np.diff(difference)
+        elbow_index = np.argmax(second_difference) + 1
+        # take distance from KNN elbow --> must be less than max_distance
+        knn_optimal_distance = smooth_dist[elbow_index]
+        optimal_distance = min(ceil(knn_optimal_distance), max_distance)
+
         print(f'KNN distance for Place {place_id}, Region {region}: {knn_optimal_distance}')
         print(f"Optimal distance for Place {place_id}, Region {region}: {optimal_distance}")
         print('________________________________________________________')
-            
+        continue
     
         unique_owners = sub_parcels['OWNER'].unique()
-        clustered_parcel_data = gpd.GeoDataFrame()
-        single_parcel_data = gpd.GeoDataFrame()
 
         for owner in tqdm(unique_owners, desc=f'Owners: ', ncols=100):
             owner_parcels = sub_parcels[sub_parcels['OWNER'] == owner]
@@ -221,5 +220,10 @@ parcel_dissolve_merge['geometry'] = parcel_dissolve_merge.apply(lambda x: x['geo
 parcel_dissolve_merge.to_file(
     os.path.join(
         data_dir, 
-        f'place_{place_id}_superparcels.shp'))
+        f'place_{place_id}_superparcels_{max_parcels_per_cluster}.shp'))
+
+all_single_parcel_data.to_file(
+    os.path.join(
+        data_dir, 
+        f'place_{place_id}_single_parcels_{max_parcels_per_cluster}.shp'))
 
