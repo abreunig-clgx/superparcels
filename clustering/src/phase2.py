@@ -1,73 +1,113 @@
-
 from shapely.ops import nearest_points
 from sklearn.neighbors import NearestNeighbors
 from scipy.ndimage import uniform_filter1d
 import numpy as np
 from math import ceil
-from sklearn.cluster import DBSCAN
-from shapely.geometry import MultiPolygon
+from sklearn.cluster import DBSCAN, KMeans
+from shapely.geometry import MultiPolygon, MultiPoint
 from scipy.spatial import cKDTree
-import warnings
-warnings.filterwarnings('ignore')
 
+from typing import List
 
-
-
-def compute_regional_distance_matrix(df):
+""" Functions for KMeans clustering """
+def build_place_regions(df, max_parcels_per_cluster):
     """
-    Computes the Distance Matrix for all polygons in each region (i.e. Place)
-    Only the upper triangle of the matrix is computed as these are
-    valid distances between polygons. The diagonal is removed as the
-    distance between a polygon and itself is 0.
+    Assigns each parcel to a region based on Kmeans clustering.
+    Returns a list of region assignments.
     """
-    distance_matrix = df.geometry.apply(lambda g: df.distance(g)).values
-    distances = distance_matrix[np.triu_indices_from(distance_matrix, k=1)]
-    distances = distances[distances > 0]
 
-    return distances
+    # number of clustrs is proportional to the number of parcels
+    nclusters = len(df) // max_parcels_per_cluster
+    print(f'Number of clusters: {nclusters}')
+    coords = build_coords(df)
 
-def compute_density(dmatrix, num_parcels):
-    """
-    Density = Number of Parcels / Range of the Distance Matrix
-    """
-    density = num_parcels / np.ptp(dmatrix) 
-    return density
+    return build_kmeans_clusters(nclusters, coords)
 
-def compute_nneighbors(density, min_k=3, max_k=10, C=100):
-    """
-    Calculate the number of neighbors for the KNN algorithm.
-    The number of neighbors is inversely proportional to the density of the data.
-    The number of neighbors is constrained to be between min_nneighbors and max_n.
+def build_kmeans_clusters(n_clusters, coords):
+    kmeans = KMeans(n_clusters=n_clusters)
+    return kmeans.fit_predict(coords)
 
-    """
-    # Calculate k inversely proportional to density, with some bounds
-    k = max(min_k, min(max_k, int(C / density)))
-    return k
 
-def compute_optimal_distance(dmatrix, n_neighbors, min_urban_distance, max_distance):
+def build_coords(df):
+    return list(zip(df.centroid.x, df.centroid.y))
+
+""" Functions for KNN distance calculation """
+def calculate_regional_knn_distance(
+            coords, 
+            kneighbors, 
+            smoothing_window, 
+            min_distance, 
+            max_distance
+        ):
     """
-    Computes the optimal distance for the DBSCAN algorithm.
-        -Nearest Neighbors is used to fit the distance matrix and compute the distances for n_neighbors nearest neighbors.
-        Dmatrix is reshaped to a 2d array to fit the Nearest Neighbors model.
-        -The distances are sorted and smoothed using a uniform filter. This gives us a smooth curve of sorted sitances which helps make the elbow more accurate.
-        -The difference between the smoothed distances is computed to find the elbow point.
-        -The optimal distance is computed as the distance at the elbow point. This distance is then rounded up and constrained to be between the min_urban_distance and max_distance.
+    Calculates the optimal distance for DBSCAN clustering. 
+    """
+    knn_distances = build_knn_distances(coords, k=kneighbors + 1)
+    kth_distances = get_kth_distances(knn_distances)
+    smoothed_distances = smooth_distances(kth_distances, window=smoothing_window)
+    diff = build_difference(smoothed_distances)
+    second_diff = build_difference(diff)
+    knn_optimal_distance = calculate_knn_optimal_distance(smoothed_distances, second_diff)
+
+    # optimal distance is between min and max distance
+    #return min(max(ceil(knn_optimal_distance), min_distance), max_distance)
+    return knn_optimal_distance
+
+def build_knn_distances(coords, k):
+    """
+    Builds a distance matrix between each parcel and its 1 to kth nearest neighbor.
+    Returns a 2d array where each row is a parcel and each column 
+    is the distance to itself then 1st, 2nd, ..., kth nearest neighbor.
+    """
+    dtree = cKDTree(coords) # KDTree for nearest neighbor
+
+    # distances between each parcel and its 1 to kth nearest neighbor
+    knn_distances, _ = dtree.query(coords, k=k + 1) # +1 to include distance to itself
+
+    return knn_distances
+
+
+
+def get_kth_distances(knn_distances):
+    """
+    Returns the kth nearest neighbor distance for each parcel.
+    """
+    return np.sort(knn_distances[:, -1])
+    
+def smooth_distances(distances, window):
+    """
+    Smooths distances to reduce noise and make the elbow more apparent.
+    Window is size of moving average. 
+    """
+    return uniform_filter1d(distances, size=ceil(window * len(distances)))
+
+def build_difference(distances):
+    """
+    Builds the difference between each distance and the next.
+    """
+    return np.diff(distances)
+
+
+def calculate_knn_optimal_distance(distances, diff_array):
+    """
+    Finds the elbow point in the difference array.
+    returns the index of the elbow point in the difference array. 
+    1 is added to the index to get the kth distance.
+    Index is then used to get the optimal distance from a sorted array of distances.
+    """
+    elbow_index = np.argmax(diff_array) + 1
+    knn_dist = distances[elbow_index]
+    if knn_dist == 0:
+        print('Warning: optimal distance is 0. Check input data.')
+    if knn_dist < 0:
+        print('Warning: optimal distance is negative. Check input data.')
+    if knn_dist == np.nan:
+        print('Warning: optimal distance is NaN. Check input data.')
+    return knn_dist
+
         
-        Min_urban_distance is the minimum distance between two liekly neighbors.
-        Max_distance is the maximum distance between two likely neighbors. This will mostley be set to 200 meters.
-    """
-    
-    knn = NearestNeighbors(n_neighbors=n_neighbors).fit(dmatrix.reshape(-1, 1))
-    knn_distances, _ = knn.kneighbors(dmatrix.reshape(-1, 1))
-    sorted_distances = np.sort(knn_distances[:, -1])
-    smooth_dist = uniform_filter1d(sorted_distances, size=10)
-    difference = np.diff(smooth_dist)
-    elbow_index = np.argmax(difference) + 1
-    # take distance from KNN elbow --> must be greater than min_urban_distance and less than max_distance
-    knn_optimal_distance = smooth_dist[elbow_index]
-    optimal_distance = min(max(ceil(knn_optimal_distance), min_urban_distance), max_distance)
-    
-    return optimal_distance, knn_optimal_distance
+
+""" Functions for DBSCAN clustering """
 
 def polygon_distance(polygon1, polygon2):
     # Calculate the minimum distance between two polygons
@@ -86,6 +126,67 @@ def compute_distance_matrix(polygons):
     
     return distance_matrix
 
+def add_attributes(df, **kwargs):
+    for key, value in kwargs.items():
+        df[key] = value
+    return df
+
+def build_owner_clusters(df, min_samples, eps):
+    """
+    Builds clusters for a same-owner parcels within a region.
+    DBSCAN is used to cluster parcels based on their distance
+    using the calculated regional optimal distance. 
+    """
+    polygons = df.geometry.to_list()
+
+    distance_matrix = compute_distance_matrix(polygons)
+
+    if distance_matrix.shape[0] < 3: # only two parcels
+        #print('Only two parcels in region. No clustering performed.')
+        dbscan = np.array([]) # no clustering
+        return dbscan
+    else:
+        return build_dbscan_clusters(distance_matrix, min_samples, eps)
+
+def build_dbscan_clusters(dmatrix, min_samples, eps):
+    dbscan = DBSCAN(eps=eps, min_samples=min_samples, metric='precomputed')
+    return dbscan.fit_predict(dmatrix)
+
+def segregate_outliers(value_counts, outlier_value):
+    """
+    Identifies outliers in a cluster based on the cluster ID.
+    Returns a list of outlier cluster Indicies and 
+    removes them from the cluster counts.
+    """
+    
+    outliers = value_counts[value_counts.index == outlier_value].index
+    outliers = set(list(outliers)) # remove duplicates
+    new_counts = value_counts[value_counts.index != -1] # drop outliers
+    return outliers, new_counts
+
+            
+def remove_from_df(df, list_of_ids: List[int], field: str):
+    """
+    removes rows from a dataframe based on a list of IDs.
+    """
+    return df[~df[field].isin(list_of_ids)]  
+
+def locate_in_df(df, list_of_ids: List[int], field: str):
+    """
+    locates rows in a dataframe based on a list of IDs.
+    """
+    return df[df[field].isin(list_of_ids)]
+
+
+def generate_cluster_string(List:[str]) -> List[str]:
+    """
+    Generates and assigns cluster IDs field to df. Returns df with cluster_ID field.
+    """
+    cluster_string = '-'.join(List)
+    return cluster_string
+
+
+""" Funcitons to Merge """
 def merge_cross_region_clusters(df, max_merge_distance=4):
     # Step 1: Identify owners spanning multiple regions
     owner_region_count = df.groupby(['OWNER', 'place_id']).size().unstack(fill_value=0)
@@ -116,7 +217,4 @@ def merge_cross_region_clusters(df, max_merge_distance=4):
 
     return df
 
-def add_attributes(df, **kwargs):
-    for key, value in kwargs.items():
-        df[key] = value
-    return df
+   
