@@ -2,7 +2,52 @@ Austin Breunig
 Chris Tackett  
 October 8, 2024
 
-## SuperParcel POC: Exploring Spatial Clustering and Buffering for Owner Aggregation Boundaries
+## Installation
+```
+conda env create -f env.yaml
+```
+
+## Running Phase 1 Code
+
+1. Query data from BigQ table. Output a csv and place locally.
+```
+SELECT CONCAT(state_code, cnty_code) as FIPS, CONCAT(own1_frst, own1_last) as OWNER, geometry
+FROM `clgx-gis-app-dev-06e3.property.spatialrecord_polygon`
+WHERE ((state_code || cnty_code) IN (<co_fips list>)
+  AND own1_frst IS NOT NULL)
+```
+
+
+2. Run data_clean.ipynb notebook. Be sure to change I/O paths to match your local setup. Notebook will produce shapefiles for each county in csv. '*candidates.shp' will be the input shapefile for the next step.
+
+3. Run src/cluster_parcels_dbscan-dmatrix-rbuff.py. Be sure to change I/O paths to match your local setup. This script will output shapefiles for each county with superparcels.
+
+-------------------
+|
+|
+|
+|
+|
+|
+|
+|
+|
+|
+PHASE II. TBD
+|
+|
+|
+|
+|
+|
+|
+|
+|
+___________________
+
+
+
+## SuperParcel POC (PHASE I.): Exploring Spatial Clustering and Buffering for Owner Aggregation Boundaries
 
 ### Introduction
 

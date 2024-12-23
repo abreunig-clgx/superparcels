@@ -21,8 +21,8 @@ sample_size: minimum number of parcels required to form a cluster
 area_threshold: minimum area required to form a super parcel
 """
 sample_size = 3
-area_threshold = 300_000
-data_dir = r'D:\Projects\superparcels\data\Urban'
+#area_threshold = 300_000
+data_dir = 'PATH/TO/DATA'
 
 def polygon_distance(polygon1, polygon2):
     # Calculate the minimum distance between two polygons
@@ -103,14 +103,14 @@ for fi in glob.glob(os.path.join(data_dir, '*\*canidates.shp')):
     single_parcel_data['cluster_ID'] = single_parcel_data['OWNER'] + '_' + single_parcel_data['cluster'].astype(str)
 
     # dissolve clusters. This will union any adjacent parcels and/or create a multi-polygon
-    parcel_dissolve = clustered_parcel_data.dissolve(by='cluster_ID').reset_index()
+    super_parcels = clustered_parcel_data.dissolve(by='cluster_ID').reset_index()
 
-    parcel_dissolve['area'] = parcel_dissolve['geometry'].area # total area of the cluster
+    #parcel_dissolve['area'] = parcel_dissolve['geometry'].area # total area of the cluster
 
-    mean_area = parcel_dissolve.groupby('cluster_ID')['area'].mean() # mean area of the cluster
-    super_parcel_ids = mean_area[mean_area > area_threshold].index # ids of clusters with mean area greater than threshold
+    #mean_area = parcel_dissolve.groupby('cluster_ID')['area'].mean() # mean area of the cluster
+    #super_parcel_ids = mean_area[mean_area > area_threshold].index # ids of clusters with mean area greater than threshold
 
-    super_parcels = parcel_dissolve[parcel_dissolve['cluster_ID'].isin(super_parcel_ids)]
+    #super_parcels = parcel_dissolve[parcel_dissolve['cluster_ID'].isin(super_parcel_ids)]
     if len(super_parcels) == 0:
         print(f'No super parcels found for {fips}')
         print(parcel_dissolve['area'].sort_values(ascending=False))
@@ -125,9 +125,9 @@ for fi in glob.glob(os.path.join(data_dir, '*\*canidates.shp')):
     super_parcels['sp_id'] = super_parcels['cluster_ID'] + "_" + super_parcels.groupby('cluster_ID').cumcount().astype(str) 
     
     # rank super parcels by area
-    super_parcels['rank'] = super_parcels['area'].rank(ascending=False) 
-    super_parcels = super_parcels.sort_values(by='rank', ascending=True)
-    super_parcels = super_parcels.reset_index(drop=True)
+    #super_parcels['rank'] = super_parcels['area'].rank(ascending=False) 
+    #super_parcels = super_parcels.sort_values(by='rank', ascending=True)
+    #super_parcels = super_parcels.reset_index(drop=True)
 
     def num_2_short_form(number):
         """
@@ -143,13 +143,13 @@ for fi in glob.glob(os.path.join(data_dir, '*\*canidates.shp')):
         else:
             return str(number)
 
-    super_parcels['sq_meters'] = super_parcels['area'].apply(num_2_short_form)
-    super_parcels = super_parcels[['sp_id', 'OWNER', 'area', 'sq_meters', 'rank', 'pcount', 'buff_dist', 'geometry']]
+    #super_parcels['sq_meters'] = super_parcels['area'].apply(num_2_short_form)
+    super_parcels = super_parcels[['sp_id', 'OWNER', 'pcount', 'geometry']]
 
     if len(single_parcel_data) > 0:
-        single_parcel_data.to_file(os.path.join(subdir, f'singles_{fips}_dbscan{dbscan_distance}-{sample_size}_area{area_threshold}_rbuff.shp'))
+        single_parcel_data.to_file(os.path.join(subdir, f'singles_{fips}_dbscan{dbscan_distance}-{sample_size}_rbuff.shp'))
 
-    super_parcels.to_file(os.path.join(subdir, f'sp_{fips}_dbscan{dbscan_distance}-{sample_size}_area{area_threshold}_rbuff.shp'))
+    super_parcels.to_file(os.path.join(subdir, f'sp_{fips}_dbscan{dbscan_distance}-{sample_size}_rbuff.shp'))
     print('_________________________________________________________')
     print('_________________________________________________________')
     
