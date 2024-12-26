@@ -13,8 +13,8 @@ from shapely.geometry import MultiPoint
 import warnings
 warnings.filterwarnings('ignore')
 
-max_parcels_per_cluster = 100 # maximum number of parcels per Kmeans cluster
-kneighbors = 5 # number of nearest neighbors for optimal distance calculation
+max_parcels_per_cluster = 25 # maximum number of parcels per Kmeans cluster
+kneighbors = 3 # number of nearest neighbors for optimal distance calculation
 min_cluster_size = 3 # minimum number of parcels required to form a DBSCAN cluster
 max_urban_distance = 120 # max. distance between two likely neighbors
 rural_distance = 200 # distance between two parcels in a rural area
@@ -38,23 +38,30 @@ for place_id, place_data in place_gdf.iterrows():
     print(f"Processing place {place_id}")
     sub_parcels = parcels[parcels.within(place_data['geometry'])]
 
-    regions = build_place_regions(sub_parcels, max_parcels_per_cluster)
-    sub_parcels['regions'] = regions
-    if not os.path.exists(os.path.join(data_dir, f'place_{place_id}_{max_parcels_per_cluster}-{kneighbors}_subparcels.shp')):
-        sub_parcels.to_file(
-            os.path.join(
-                data_dir,
-                f'place_{place_id}_{max_parcels_per_cluster}-{kneighbors}_subparcels.shp')
-        )
-        
+    regions, region_centroids = build_place_regions(sub_parcels, max_parcels_per_cluster)
+    print(f"Number of regions: {len(set(regions))}")
+    # keep merging small clusters until there are no clusters with less than min_cluster_size parcels
     
-    for region in sub_parcels['regions'].unique():
+
+    merged_regions = merge_small_clusters(
+        regions,
+        region_centroids,
+        min_cluster_size
+    )
+    print(f"Number of merged regions: {len(set(merged_regions))}")
+    sys.exit()
+    sub_parcels['regions'] = merged_regions
+    
+        
+    all_regional_parcels = gpd.GeoDataFrame()
+    for region in tqdm(sub_parcels['regions'].unique(), desc='Regions', ncols=100):
         print('________________________________')
         print(f"Processing region {region}")
         clustered_parcel_data = gpd.GeoDataFrame()
         single_parcel_data = gpd.GeoDataFrame()
         
         regional_parcels = sub_parcels[sub_parcels['regions'] == region]
+        print(f"Number of parcels in region {region}: {len(regional_parcels)}")
 
         region_coords = build_coords(regional_parcels)
         
@@ -70,12 +77,22 @@ for place_id, place_data in place_gdf.iterrows():
             min_distance=min_urban_distance,
             max_distance=max_urban_distance
         )
-        print(f'Smoothing window Parcels: {smoothing_window*len(regional_parcels)}')
+        smt_wndw = smoothing_window*len(regional_parcels)
+        print(f'Smoothing window Parcels: {smt_wndw}')
         print(f'KNeighbors: {kneighbors}')
         print(f"Optimal distance for Place {place_id}, Region {region}: {knn_optimal_distance}")
+        # use the map funciton to apply values for subset of data
+        regional_parcels['knn_dist'] = knn_optimal_distance
+        regional_parcels['kneighbors'] = kneighbors
+        regional_parcels['smt_wndw'] = smt_wndw
+        
+        
+        all_regional_parcels = pd.concat([all_regional_parcels, regional_parcels], ignore_index=True)
+        #print(all_regional_parcels.head())
+        
         
         unique_owners = regional_parcels['OWNER'].unique()
-        for owner in tqdm(unique_owners, desc='Owners', ncols=100):
+        for owner in unique_owners:
             #print(f"Processing owner {owner}")
             owner_parcels = regional_parcels[regional_parcels['OWNER'] == owner]
                      
@@ -143,7 +160,13 @@ for place_id, place_data in place_gdf.iterrows():
         all_clustered_parcel_data = pd.concat([all_clustered_parcel_data, clustered_parcel_data], ignore_index=True)
         all_single_parcel_data = pd.concat([all_single_parcel_data, single_parcel_data], ignore_index=True)
 
-
+    if not os.path.exists(os.path.join(data_dir, f'place_{place_id}_maxp-{max_parcels_per_cluster}_CC_Distribution.shp')):
+        all_regional_parcels.to_file(
+            os.path.join(
+                data_dir,
+                f'place_{place_id}_maxp-{max_parcels_per_cluster}_CC_Distribution.shp')
+        )
+    
 
 print('________________________________________________________')
 
@@ -159,7 +182,7 @@ for single_id, single_data in all_single_parcel_data.iterrows():
     if same_owner_n.empty:
         continue
     same_owner_n['cross_dist'] = same_owner_n['geometry'].apply(lambda x: polygon_distance(x, single_data['geometry']))
-    same_owner_nclusters = same_owner_n.loc[same_owner_n['cross_dist'] <= 3]
+    same_owner_nclusters = same_owner_n.loc[same_owner_n['cross_dist'] <= max_urban_distance]
     
     
     if same_owner_nclusters.empty:
@@ -181,7 +204,9 @@ for single_id, single_data in all_single_parcel_data.iterrows():
     all_clustered_parcel_data = pd.concat([all_clustered_parcel_data, same_owner_merge], ignore_index=True)
 
 
-all_clustered_parcel_data_merged = merge_cross_region_clusters(all_clustered_parcel_data)
+all_clustered_parcel_data_merged = merge_cross_region_clusters(
+    all_clustered_parcel_data,
+    max_merge_distance=max_urban_distance)
 
 
 parcel_dissolve_merge = all_clustered_parcel_data_merged.dissolve(by='cluster_ID').reset_index()
@@ -193,10 +218,10 @@ parcel_dissolve_merge['geometry'] = parcel_dissolve_merge.apply(lambda x: x['geo
 parcel_dissolve_merge.to_file(
     os.path.join(
         data_dir, 
-        f'place_{place_id}_superparcels_{max_parcels_per_cluster}_rawKNNdist.shp'))
+        f'place_{place_id}_superparcels_{max_parcels_per_cluster}_CC_Distribution.shp'))
 
 all_single_parcel_data.to_file(
     os.path.join(
         data_dir, 
-        f'place_{place_id}_single_parcels_{max_parcels_per_cluster}_rawKNNdist.shp'))
+        f'place_{place_id}_single_parcels_{max_parcels_per_cluster}_CC_Distribution.shp'))
 

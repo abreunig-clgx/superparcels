@@ -6,6 +6,7 @@ from math import ceil
 from sklearn.cluster import DBSCAN, KMeans
 from shapely.geometry import MultiPolygon, MultiPoint
 from scipy.spatial import cKDTree
+from scipy.spatial.distance import cdist
 
 from typing import List
 
@@ -18,14 +19,18 @@ def build_place_regions(df, max_parcels_per_cluster):
 
     # number of clustrs is proportional to the number of parcels
     nclusters = len(df) // max_parcels_per_cluster
-    print(f'Number of clusters: {nclusters}')
+    
     coords = build_coords(df)
 
-    return build_kmeans_clusters(nclusters, coords)
+    labels, centroids = build_kmeans_clusters(nclusters, coords)
+    return labels, centroids
 
 def build_kmeans_clusters(n_clusters, coords):
     kmeans = KMeans(n_clusters=n_clusters)
-    return kmeans.fit_predict(coords)
+    labels = kmeans.fit_predict(coords)  
+    centroids = kmeans.cluster_centers_
+
+    return labels, centroids
 
 
 def build_coords(df):
@@ -45,6 +50,9 @@ def calculate_regional_knn_distance(
     knn_distances = build_knn_distances(coords, k=kneighbors + 1)
     kth_distances = get_kth_distances(knn_distances)
     smoothed_distances = smooth_distances(kth_distances, window=smoothing_window)
+    if len(smoothed_distances) <= 2:
+        print('Warning: Not enough data to calculate optimal distance. Check input data.')
+        return 1
     diff = build_difference(smoothed_distances)
     second_diff = build_difference(diff)
     knn_optimal_distance = calculate_knn_optimal_distance(smoothed_distances, second_diff)
@@ -70,9 +78,10 @@ def build_knn_distances(coords, k):
 
 def get_kth_distances(knn_distances):
     """
+    Firsts changes inf to 0, then returns the kth nearest neighbor distance for each parcel.
     Returns the kth nearest neighbor distance for each parcel.
     """
-    return np.sort(knn_distances[:, -1])
+    return np.nan_to_num(knn_distances[:, -1])
     
 def smooth_distances(distances, window):
     """
@@ -97,13 +106,43 @@ def calculate_knn_optimal_distance(distances, diff_array):
     """
     elbow_index = np.argmax(diff_array) + 1
     knn_dist = distances[elbow_index]
-    if knn_dist == 0:
-        print('Warning: optimal distance is 0. Check input data.')
-    if knn_dist < 0:
-        print('Warning: optimal distance is negative. Check input data.')
-    if knn_dist == np.nan:
-        print('Warning: optimal distance is NaN. Check input data.')
+    if knn_dist == np.inf:
+        return 1
+    if knn_dist <= 0:
+        return 1
+
+       
+    
     return knn_dist
+
+def merge_small_clusters(labels, centroids, min_cluster_size):
+    """
+    Merges small clusters into larger clusters.
+    Returns the new cluster labels.
+    """
+
+    # Step 1: Identify Small Clusters
+    cluster_sizes = np.bincount(labels)
+    
+    small_clusters = np.where(cluster_sizes < min_cluster_size)[0]
+
+    # Step 2: Merge Small Clusters
+    for small_cluster in small_clusters:
+        small_cluster_indices = np.where(labels == small_cluster)[0]
+        small_cluster_centroid = centroids[small_cluster]
+
+        # Find the nearest larger cluster
+        other_clusters = [i for i in range(len(centroids)) if i != small_cluster]
+        distances = cdist([small_cluster_centroid], centroids[other_clusters], metric='euclidean')
+        nearest_cluster = other_clusters[np.argmin(distances)]
+
+        # Reassign small cluster points to the nearest cluster
+        labels[small_cluster_indices] = nearest_cluster
+    
+    return labels
+
+
+
 
         
 
@@ -142,7 +181,7 @@ def build_owner_clusters(df, min_samples, eps):
     distance_matrix = compute_distance_matrix(polygons)
 
     if distance_matrix.shape[0] < 3: # only two parcels
-        #print('Only two parcels in region. No clustering performed.')
+        ##print('Only two parcels in region. No clustering performed.')
         dbscan = np.array([]) # no clustering
         return dbscan
     else:
