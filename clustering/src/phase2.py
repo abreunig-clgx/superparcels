@@ -18,7 +18,10 @@ def build_place_regions(df, max_parcels_per_cluster):
     """
 
     # number of clustrs is proportional to the number of parcels
-    nclusters = len(df) // max_parcels_per_cluster
+    if len(df) < max_parcels_per_cluster:
+        nclusters = 1
+    else:    
+        nclusters = len(df) // max_parcels_per_cluster
     
     coords = build_coords(df)
 
@@ -26,7 +29,7 @@ def build_place_regions(df, max_parcels_per_cluster):
     return labels, centroids
 
 def build_kmeans_clusters(n_clusters, coords):
-    kmeans = KMeans(n_clusters=n_clusters)
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42)
     labels = kmeans.fit_predict(coords)  
     centroids = kmeans.cluster_centers_
 

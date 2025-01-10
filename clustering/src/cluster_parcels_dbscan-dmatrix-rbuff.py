@@ -22,7 +22,7 @@ area_threshold: minimum area required to form a super parcel
 """
 sample_size = 3
 #area_threshold = 300_000
-data_dir = r'D:\Projects\superparcels\data\Urban\Alameda_CA'
+data_dir = r'D:\Projects\superparcels\data\Phase2\la_ca'
 
 def polygon_distance(polygon1, polygon2):
     # Calculate the minimum distance between two polygons
@@ -42,7 +42,7 @@ def compute_distance_matrix(polygons):
     return distance_matrix
 
 
-for fi in glob.glob(os.path.join(data_dir, '*canidates.shp')):
+for fi in glob.glob(os.path.join(data_dir, '*candidates.shp')):
     fips = os.path.basename(fi).split('_')[2]
     subdir = os.path.dirname(fi)
 
