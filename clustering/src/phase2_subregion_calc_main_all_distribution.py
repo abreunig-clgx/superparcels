@@ -21,14 +21,14 @@ rural_distance = 200 # distance between two parcels in a rural area
 smoothing_window = 0.5 # 50% of the distance data is used for smoothing (i.e. 50% of the data is used for the window)
 min_urban_distance = 15 # minimum distance between two parcels in an urban area
 
-data_dir = r'D:\Projects\superparcels\data\phase2\san_fran_ca'
+data_dir = r'D:\Projects\superparcels\data\phase2\la_ca'
 print('Reading data...')
-place_gdf = gpd.read_file(os.path.join(data_dir, 'san_fran_test_place.shp'))[['PLACEFP', 'NAME', 'geometry']]
+place_gdf = gpd.read_file(os.path.join(data_dir, 'tl_pl_los_angeles.shp'))[['PLACEFP', 'NAME', 'geometry']]
 utm_crs = place_gdf.estimate_utm_crs().to_epsg()
 place_gdf = place_gdf.to_crs(epsg=utm_crs)
 #place_gdf = place_gdf.loc[place_gdf['PLACEFP'] == '41992']
-parcels = gpd.read_file(os.path.join(data_dir, 'sp_sample_06075.shp'))
-cc_parcels = gpd.read_file(os.path.join(data_dir, 'sp_sample_06075_cluster_canidates.shp'))
+parcels = gpd.read_file(os.path.join(data_dir, 'sp_sample_06037.shp'))
+cc_parcels = gpd.read_file(os.path.join(data_dir, 'sp_sample_06037_cluster_candidates.shp'))
 
 parcels = parcels.to_crs(epsg=utm_crs)
 cc_parcels = cc_parcels.to_crs(epsg=utm_crs)
@@ -42,6 +42,7 @@ for place_id, place_data in place_gdf.iterrows():
     #print(all_clustered_parcel_data.columns)
     place_id += 1
     place_name = place_data['NAME']
+    place_area = place_data['geometry'].area
     #if place_name != 'Brea':
     #    continue
 
@@ -77,11 +78,15 @@ for place_id, place_data in place_gdf.iterrows():
         region = regional_parcels['regions'].iloc[0]
         #print(f'Number of parcels in region {region}: {len(regional_parcels)}')
         # find cc_parcels that intersect with regional_parcels
-        regional_cc_parcels = cc_parcels[cc_parcels.within(regional_parcels.unary_union)]
+        regional_cc_parcels = cc_parcels[cc_parcels.intersects(regional_parcels.unary_union)]
 
         if len(regional_cc_parcels) == 0:
             continue
         regional_cc_parcels['region'] = region
+        regional_cc_parcels['place_id'] = place_id
+        regional_cc_parcels['place_name'] = place_name
+        regional_cc_parcels['place_area'] = place_area
+        regional_cc_parcels['place_count'] = len(sub_parcels)
         #print(f"Number of cc_parcels in region {region}: {len(regional_cc_parcels)}")
         #print(f"Number of parcels in region {region}: {len(regional_parcels)}")
 
@@ -156,7 +161,6 @@ for place_id, place_data in place_gdf.iterrows():
                     cluster_filter,
                     pcount=cluster_filter['cluster'].map(counts),
                     knn_dist=knn_optimal_distance,
-                    place_id=place_id
                 )
                 clustered_parcel_data = pd.concat([clustered_parcel_data, cluster_filter], ignore_index=True)
            
@@ -228,7 +232,18 @@ for place_id, place_data in place_gdf.iterrows():
     #parcel_dissolve_merge['geometry'] = parcel_dissolve_merge.apply(lambda x: x['geometry'].buffer(-x['knn_dist']), axis=1)
 
     all_clustered_parcel_data_merged = (all_clustered_parcel_data_merged
-        [['FIPS', 'OWNER', 'place_id', 'cluster_ID', 'area', 'knn_dist', 'pcount', 'geometry']]
+        [['FIPS', 
+        'OWNER', 
+        'place_id', 
+        'place_name',
+        'place_count',
+        'place_area',
+        'region', 
+        'cluster_ID',
+        'area', 
+        'knn_dist', 
+        'pcount', 
+        'geometry']]
     )
 
     
@@ -336,13 +351,25 @@ final_cluster_geodataframe_dissolved['geometry'] = final_cluster_geodataframe_di
 final_cluster_geodataframe_dissolved['geometry'] = final_cluster_geodataframe_dissolved.apply(lambda x: x['geometry'].buffer(-x['knn_dist']), axis=1)
 
 final_cluster_geodataframe_dissolved = (final_cluster_geodataframe_dissolved
-    [['FIPS', 'OWNER', 'cluster_ID', 'area', 'knn_dist', 'pcount', 'geometry']]
-)
+    [['FIPS', 
+    'OWNER', 
+    'place_id', 
+    'place_name',
+    'place_count',
+    'place_area',
+    'region', 
+    'cluster_ID',
+    'area', 
+    'knn_dist', 
+    'pcount', 
+    'geometry']]
+    )
+
 
 final_cluster_geodataframe_dissolved.to_file(
     os.path.join(
         data_dir, 
-        f'SF_SuperParcels_All_Distribution.shp'))
+        f'LA_SuperParcels_All_Distribution_v2.shp'))
 
 print(f'Rural Processing Time: {datetime.now() - rural_processing_time}')
 print('________________________________')

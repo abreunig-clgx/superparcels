@@ -54,7 +54,7 @@ Ultimately, the adaptive approach demonstrates an ability to account for the den
 
 ## Insights and Recommendations
 ### Insights
-#### 1. Low vs. High KNN Distance Variability
+#### Low vs. High KNN Distance Variability
 When applying the adaptive epsilon approach to Los Angeles and San Francisco, we observe notable differences in the variability of the k-nearest neighbor (KNN) distances across the regions within each place boundary. These differences are indicative of the varying regional densities within each area, which directly impacts the clustering process.
 
 In Los Angeles, there is a large degree of variability in KNN distances across different place boundaries and their respective regions. This variability reflects the significant differences in parcel density across the city. In more densely developed areas, the KNN distances are shorter, while in less developed areas, they tend to be larger. This variability is advantageous because it means that the adaptive epsilon approach can effectively capture the spatial distribution of parcels, using shorter distances in denser areas and larger distances in sparser ones. This localized approach ensures that the clustering algorithm more accurately represents the true spatial relationships between parcels, which is especially important in a sprawling, diverse city like Los Angeles.
@@ -67,7 +67,9 @@ There are two possible explanations for this low variability. First, San Francis
 
 In conclusion, while Los Angeles benefits from the ability to adapt to large regional variations in density, San Francisco's relatively uniform KNN distances reflect either a consistent density or the effect of a large, generalized place boundary. This highlights the different ways in which the adaptive epsilon approach can perform in cities with differing levels of spatial complexity. For cities with high variability, such as Los Angeles, the adaptive approach proves effective in reflecting true spatial relationships, though care must be taken to address the potential challenges of varying distances. In more uniform areas like San Francisco, the approach may smooth over these variations, leading to less variability but possibly losing some finer distinctions in the clustering.
 
-#### 2. SuperParcel Count and Size
+### Recommendations
+#### Refine Adaptive Epsilon Parameters
+Given the trade-offs between accuracy and coverage observed in the adaptive epsilon approach, it is recommended to further refine the parameters to achieve a better balance between these two objectives. By adjusting the epsilon calculation method or incorporating additional factors, such as parcel size, it may be possible to capture more same-owner parcels while maintaining the localized precision of the clusters. This refinement could involve a more nuanced approach to distance calculation, potentially incorporating multiple epsilon values based on parcel characteristics or regional densities.
 
-
-
+#### Implement Distance Thresholds Based on Regional Density
+To address the challenges of varying KNN distances in Places with high density variability, it may be beneficial to implement distance thresholds based on regional density levels. By setting different epsilon values for areas with distinct parcel densities, we could build in gurad rails to prevent extreme over- or under-clustering. 
