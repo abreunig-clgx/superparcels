@@ -1,191 +1,79 @@
-Austin Breunig  
-Chris Tackett  
-October 8, 2024
-
-## Installation
-```
-conda env create -f env.yaml
-```
-
-## Running Phase 1 Code
-
-1. Query data from BigQ table. Output a csv and place locally.
-```
-SELECT CONCAT(state_code, cnty_code) as FIPS, CONCAT(own1_frst, own1_last) as OWNER, geometry
-FROM `clgx-gis-app-dev-06e3.property.spatialrecord_polygon`
-WHERE ((state_code || cnty_code) IN (<co_fips list>)
-  AND own1_frst IS NOT NULL)
-```
+Austin Breunig
+January 16, 2025
 
 
-2. Run data_clean.ipynb notebook. Be sure to change I/O paths to match your local setup. Notebook will produce shapefiles for each county in csv. '*candidates.shp' will be the input shapefile for the next step.
+# SuperParcels POC (Phase II.): Exploring Adaptive Epsilon in Urban Areas
 
-3. Run src/cluster_parcels_dbscan-dmatrix-rbuff.py. Be sure to change I/O paths to match your local setup. This script will output shapefiles for each county with superparcels.
+## Introduction
 
--------------------
-|
-|
-|
-|
-|
-|
-|
-|
-|
-|
-PHASE II. TBD
-|
-|
-|
-|
-|
-|
-|
-|
-|
-___________________
+In the context of parcel clustering, accurately determining the epsilon (ε) parameter for density-based clustering algorithms such as DBSCAN is critical. For rural parcels, a fixed epsilon of 200 meters is often sufficient, as parcel distances tend to be more uniform. However, this value is inappropriate for urban parcels, where distances between parcels are generally much smaller and more varied due to denser development and infrastructure.
+
+To address this challenge, this report outlines a method for calculating an adaptive epsilon specific to parcels within a designated urban area, referred to here as a "place boundary." The approach is designed to improve the precision and relevance of clustering in urban environments, ensuring that the epsilon value better reflects the scale and spatial arrangement of urban parcels.
+
+The following sections will compare the performance of this adaptive epsilon approach against the original fixed 200-meter epsilon on densely urban counties such as Los Angeles, Alameda, and San Francisco counties. We will examine the differences in clustering outcomes between the original and new methods, highlighting the improvements in precision and relevance for urban parcel clustering.
+
+## Methodology
+
+The proposed method involves a series of steps to compute and apply the adaptive epsilon. First, we apply k-means clustering to group parcels within the place boundary into regions of approximately 200 parcels per cluster. Next, a KD-Tree is built for each region to efficiently calculate the pairwise distances between parcels. These distances are then smoothed, and the "elbow" method is employed to identify a suitable epsilon value for each region. This epsilon is then used in the DBSCAN algorithm to identify same-owner parcels within each region.
+
+<img src="Images\phase2\I-III_Process.PNG" width="1000" />
+
+Afterward, a merging process is used to expand the identification of same-owner parcels across adjacent regions, ensuring that all parcels with the same owner are correctly clustered. The final result is a set of same-owner clusters, each with a unique cluster ID, which are ultimately used to define the boundaries of the final superparcel.
+
+<img src="Images\phase2\IV-V_Process.PNG" width="1000" />
+
+This adaptive approach allows for more accurate and meaningful clustering in urban environments, accommodating the spatial complexities inherent in dense, urban parcel distributions. 
+
+## Results
+When comparing the original 200-meter epsilon to the adaptive epsilon approach, we see the adaptive method produces a significantly tighter and more localized boundary for each cluster.
+
+#### Alameda
+<img src="Images\phase2\Alameda2.png" width="1000" />
+
+In contrast, the original 200-meter epsilon captures same-owner parcels that are far outside of a logical area, often including parcels that, while owned by the same entity, are separated by substantial distances. This can result in clusters that span across different neighborhoods or even parts of the county that have no direct proximity or connection, leading to over-generalization in the clustering process. The larger epsilon essentially groups parcels that are not realistically "close", distorting the final superparcel boundaries.
+
+#### Los Angeles
+<img src="Images\phase2\LA2_1.png" width="1000" />
+<img src="Images\phase2\LA2_2.png" width="1000" />
+<img src="Images\phase2\LA2_3.png" width="1000" />
+
+On the other hand, the adaptive epsilon approach calculates a smaller, more appropriate epsilon value, reflecting the true spatial proximity of urban parcels. By utilizing k-means clustering to break the area into smaller, more manageable regions, and then refining the epsilon based on pairwise distances within these regions, the adaptive method ensures that only those same-owner parcels that are in close proximity are considered part of the same cluster. This leads to more accurate and relevant cluster boundaries, which are both smaller and more reflective of actual urban development patterns.
+
+#### San Francisco
+<img src="Images\phase2\SF2_1.png" width="1000" />
+<img src="Images\phase2\SF2_2.png" width="1000" />
+
+However, although the adaptive approach results in more accurately built superparcels, it also captures fewer superparcels overall. The original 200-meter epsilon, by contrast, produces many more superparcels, as its larger proximity range leads to the inclusion of a broader set of parcels in the same cluster. This brings up an important consideration: Could the adaptive approach be improved by refining the parameters further? Specifically, it may be possible to maintain the focus on local same-owner parcels while slightly expanding the proximity range to capture more same-owner parcels without compromising the overall accuracy and relevance of the clusters. Such a refinement could strike a balance between precision and coverage, allowing for a more comprehensive representation of same-owner parcel clusters in urban environments.
+
+Ultimately, the adaptive approach demonstrates an ability to account for the denser, more complex parcel distributions typical of urban areas. It ensures that same-owner parcels are clustered in a way that is both geographically logical and consistent with urban realities. However, further refinement of the parameters could help capture more of the same-owner parcels without sacrificing the localized accuracy that the adaptive method provides.
+
+### SuperParcel Comparison: Adaptive vs. Fixed
+<img src="Images\phase2\area_comparison_adaptive_vs_original_Aquery.png" width="1000" />
+
+
+### KNN Distance Comparison by Place Boundary
+<img src="Images\phase2\knn_dist_comparison_adaptive_vs_original_Aquery.png" width="1000" />
 
 
 
-## SuperParcel POC (PHASE I.): Exploring Spatial Clustering and Buffering for Owner Aggregation Boundaries
+## Insights and Recommendations
+### Insights
+#### Low vs. High KNN Distance Variability
+When applying the adaptive epsilon approach to Los Angeles and San Francisco, we observe notable differences in the variability of the k-nearest neighbor (KNN) distances across the regions within each place boundary. These differences are indicative of the varying regional densities within each area, which directly impacts the clustering process.
 
-### Introduction
+In Los Angeles, there is a large degree of variability in KNN distances across different place boundaries and their respective regions. This variability reflects the significant differences in parcel density across the city. In more densely developed areas, the KNN distances are shorter, while in less developed areas, they tend to be larger. This variability is advantageous because it means that the adaptive epsilon approach can effectively capture the spatial distribution of parcels, using shorter distances in denser areas and larger distances in sparser ones. This localized approach ensures that the clustering algorithm more accurately represents the true spatial relationships between parcels, which is especially important in a sprawling, diverse city like Los Angeles.
 
-This project explored methodologies for clustering parcel data based on ownership and proximity, with the ultimate goal of creating superparcels—aggregations of parcels owned by the same individual within a specified distance. The Proof of Concept (PoC) focuses on using DBSCAN clustering and spatial analysis techniques to identify parcel groupings that reflect meaningful spatial associations between properties owned by the same entity.
+However, the variability also presents some challenges. While the adaptive epsilon is tailored to regional densities, there is a risk that some distances may be either too large or too small, leading to over- or under-clustering of same-owner parcels. In certain cases, a distance that is too large might erroneously group parcels that are not sufficiently close, while a distance that is too small might fail to capture clusters that should logically be grouped together. This trade-off underscores the importance of carefully tuning the adaptive epsilon to balance accuracy and coverage, especially in areas with high regional variability.
 
-A critical component of this project is the use of a precomputed distance matrix, which optimizes the clustering process by allowing for the efficient grouping of parcels based on proximity. Furthermore, this project refines the boundary creation around parcel clusters, moving from traditional methods like concave hulls to the more precise “reverse-buffer” technique, which produces tighter and more accurate superparcel boundaries.
+In contrast, San Francisco, being a much smaller and more uniformly developed city, presents a different scenario. Since the entire city is treated as a single place boundary, the variability in KNN distances is minimal. This lack of variability suggests that San Francisco’s urban structure may be more consistent in terms of parcel density, with fewer fluctuations between densely and sparsely developed areas. Alternatively, it could be a result of the single large place boundary, which might have effectively smoothed out local density fluctuations, treating the entire city as one homogeneous area.
 
-Predefined guardrails were implemented to improve the quality of the resulting superparcels. One such filter was based on area, where only superparcels larger than 300,000 square meters were retained. This helped to emphasize more significant superparcels while discarding smaller ones that could introduce noise into the dataset.
+There are two possible explanations for this low variability. First, San Francisco could indeed exhibit a more uniform density across its territory, with few large differences in parcel distribution. Second, the single large place boundary could be suppressing the smaller-scale variations in density, effectively averaging out the local fluctuations. While this lack of variability simplifies the adaptive epsilon calculation, it also means that the clustering might not capture finer-grained patterns that could exist within smaller regions or neighborhoods.
 
-Another guardrail involved setting the minimum sample size for DBSCAN to three parcels. This ensured that clusters contained at least three candidate parcels before boundary creation, preventing the formation of small, insignificant superparcel boundaries.
+In conclusion, while Los Angeles benefits from the ability to adapt to large regional variations in density, San Francisco's relatively uniform KNN distances reflect either a consistent density or the effect of a large, generalized place boundary. This highlights the different ways in which the adaptive epsilon approach can perform in cities with differing levels of spatial complexity. For cities with high variability, such as Los Angeles, the adaptive approach proves effective in reflecting true spatial relationships, though care must be taken to address the potential challenges of varying distances. In more uniform areas like San Francisco, the approach may smooth over these variations, leading to less variability but possibly losing some finer distinctions in the clustering.
 
-While the methodologies outlined in this PoC were successfully applied in more rural areas, where parcels are typically larger and more dispersed, challenges emerged in high-density urban environments, where the clustering parameters were less effective. Moreover, urban areas may not be the best geographical area for super parcels, as many of the urban AOIs resulted in very little superparcel creation. As such, the findings of this PoC offer valuable insights into the development of adaptive clustering techniques, and/or focusing on more rural areas.
+### Recommendations
+#### Refine Adaptive Epsilon Parameters
+Given the trade-offs between accuracy and coverage observed in the adaptive epsilon approach, it is recommended to further refine the parameters to achieve a better balance between these two objectives. By adjusting the epsilon calculation method or incorporating additional factors, such as parcel size, it may be possible to capture more same-owner parcels while maintaining the localized precision of the clusters. This refinement could involve a more nuanced approach to distance calculation, potentially incorporating multiple epsilon values based on parcel characteristics or regional densities.
 
-The current recommended methodology relies on a subset of the parcel data, focusing on parcels with duplicate owners and unique geometries. Although this subset approach worked well for the initial PoC, further work is recommended to clean and adapt the data, potentially increasing the number of candidate parcels for more robust clustering outcomes.
-
-### Preprocessing Step: Identifying Candidate Parcels
-
-#### Overview
-
-Before applying the clustering methodologies, it is essential to filter the dataset to identify candidate parcels for clustering. The focus is on parcels that have duplicate owners but unique geometries, as these represent parcels that will be most effective in understanding the clustering and boundary creation of the superparcels. 
-
-#### Methodology
-
-* Duplicate Owner, Unique Geometry Identification:  
-  A process was conducted to classify parcels based on duplicates across multiple fields. The key was to identify parcels where the owner appears multiple times in the dataset, but the geometry of each parcel is unique.   
-  Classifications  
-  * Duplicate OWNER, Unique geometry         
-  * Duplicate OWNER, Duplicate geometry  
-  * Unique OWNER, Unique geometry            
-  * Unique OWNER, Duplicate geometry       
-
-#### Urban AOIs
-
-San Francisco County, CA
-<img src="Images\Urban\san_fran_parcel_candi.png" width="1000" />
-
-Alameda County, CA
-<img src="Images\Urban\alameda_parcel_candi.png" width="1000" />
-
-Denver County, CO  
-<img src="Images\Urban\denver_parcel_candi.png" width="1000" />
-
-Dallas County, TX  
-<img src="Images\Urban\dallas_parcel_candi.png" width="1000" />
-
-#### Rural AOIs
-
-Rusk County, WI
-<img src="Images\Rural\rusk_wi_parcel_candi.png" width="1000" />
-
-Kiowa County, KS  
-<img src="Images\Rural\kiowa_ks_parcel_candi.png" width="1000" />
-
-Crook County, OR  
-<img src="Images\Rural\crook_or_parcel_candi.png" width="1000" />
-
-Sierra County, NM  
-<img src="Images\Rural\sierra_nm_parcel_candi.png" width="1000" />
-
-### DBSCAN Clustering \+ Distance Matrix \+ Reverse Buffer
-
-### Overview
-
-The recommended methodology outlines a refined approach for clustering owner parcels based on proximity, utilizing DBSCAN with a precomputed distance matrix, and constructing superparcel boundaries using a reverse buffer technique. 
-
-Recommended Methodology
-
-* Precomputed Distance Matrix:  
-  To enhance the performance and accuracy of the clustering process, a distance matrix was precomputed to capture the pairwise distances between parcels owned by the same individual. This matrix serves as input to DBSCAN, ensuring that the clustering is based on the actual spatial relationships between parcels, accounting for irregular parcel shapes and varying distances. Distances between parcels were calculated as “nearest-points” to each other.   
-* DBSCAN Clustering:  
-  DBSCAN, driven by the precomputed distance matrix, is used to cluster parcels within a specified proximity. Based on the previous findings, a 200-meter distance threshold is recommended for clustering, as this distance produced optimal results for grouping closely situated parcels without including those that are too far apart. The minimum sample size was set to three parcels meaning at least three parcels within the specified distance were required for a cluster to form.   
-* Reverse Buffer for Boundary Construction:  
-  To generate superparcel boundaries, the reverse buffer method is applied instead of the concave hull. This technique works by first creating an outward buffer around each parcel and then shrinking it inward, producing a boundary that tightly conforms to the cluster's outer edges. The reverse buffer yields a much more precise and compact boundary, providing an accurate representation of the grouped parcels within the specified distance threshold. This ensures that the resulting superparcels reflect the true spatial extent of the owner's properties, without excessive empty space or over-expansion.  
-* Minimum Area: 										To generate significant superparcels, a minimum of 300,000 square meters was used to filter the final superparcel outputs. 
-
-### Brief Overview of Other Explored Methodologies
-
-1. DBSCAN Clustering with Concave Hull  
-   One of the earlier methodologies involved using the concave hull to create boundaries around the clusters formed by DBSCAN. The concave hull method, while capable of forming boundaries that follow the general shape of the parcels, often produced loose boundaries that were not as tight or precise as needed for this PoC.  
-   Additionally, centroids were initially used as inputs for clustering. This approach proved problematic for irregularly shaped parcels, as some centroids fell outside their respective parcels, negatively impacting the accuracy of the clustering process.  
-2. KNN and Elbow Method for Distance Optimization  
-   The K-Nearest Neighbors (KNN) algorithm was applied to determine the optimal distance for clustering by analyzing the elbow point in the plot of distances. However, the distances calculated were farther than intended for this PoC, which aimed to find similar parcels that were very close to each other. After testing with a 200-meter distance threshold, excellent results were achieved, making it the preferred method.  
-3. Initial Clustering Without Preprocessing  
-   An initial clustering attempt was made without the preprocessing step of filtering for duplicate owners with unique geometries. This resulted in noisy data and less relevant clusters, highlighting the importance of focusing only on parcels with distinct geometries under the same ownership for more meaningful clustering.
-
-### 
-
-### 
-
-### Results and Considerations
-
-Methodology Results:
-
-* No SuperParcels for San Francisco County or Denver County:					Both counties resulted in zero superparcel creation, meaning, no one owner had more than 3 parcels within the distance threshold.   
-* Efficient and Accurate Clustering:  
-  The combination of the precomputed distance matrix and the DBSCAN algorithm effectively grouped nearby parcels, ensuring that only parcels within the 200-meter distance threshold were included in the clusters. This method avoided overestimating cluster distances, aligning the results with the intended goals of the PoC.  
-* Tighter Boundaries with Reverse Buffer:  
-  The reverse buffer method produced significantly tighter and more accurate boundaries around the clusters, compared to the concave hull. The boundaries closely followed the contours of the clustered parcels, resulting in superparcels that are a more faithful representation of the owner's parcels within the specified distance. This improvement enhances the precision of the parcel associations and the final superparcel output.  
-* Performance:  
-  * Alameda, CA: 38,644 parcels in approx. 15 minutes   
-  * Dallas, TX: 44,050 parcels in approx. 27 minutes  
-  * Crook, OR 1,226 Parcels in approx. 9 secs.  
-  * Kiowa, KS 1,036 Parcels in approx. 7 secs.  
-  * Rusk, Wi 4,028 Parcels in approx. 1 minute  
-  * Sierra, NM 1,262 Parcels in approx. 12 secs.
-
-Rural vs. Urban Areas:
-
-* The 200-meter threshold worked well in rural areas, where superparcels were larger and more prevalent.  
-* Rural areas had more "Duplicate Owner, Unique Geometry" candidate parcels, leading to a higher clustering success rate.  
-* Urban areas had fewer candidate parcels after filtering, possibly due to:  
-  * Higher instances of missing data.  
-  * Less accurate owner information in dense urban environments.  
-* The 200-meter distance threshold would not be appropriate for urban AOIs.
-
-Preprocessing for Candidate Parcels:
-
-* A key preprocessing step is identifying duplicate owners with unique geometries, which are used as candidate parcels for clustering. While effective, this limits the pool of parcels.
-
-### Recommendations for Future Steps
-
-* Adaptive Clustering for Diverse Regions:  
-  Consider using adaptive distance thresholds in DBSCAN for regions with varying parcel densities. This could help maintain clustering accuracy across both dense urban areas and sparse rural regions. An example of this would be to run a KNN analysis on all parcel data prior to data cleaning, to understand local density. Once these “regions” were spatially identified, optimal distance could be applied to each region. Further research on this additional process would need to be considered. An obvious challenge to overcome would be if an owner existed in more than one region.   
-* Robust Data-Cleaning Steps:  
-  Develop additional data-cleaning steps to include more candidate parcels, improving clustering outcomes. These could help handle the incomplete, incorrect, or missing owner information. Additionally, handling the multiple Owner fields by standardizing a concatenation process could also help increase candidate parcels. 
-
-### 
-
-### Maps
-
-<img src="Images\Urban\Alameda_map150.png" width="1000" />
-
-<img src="Images\Urban\Dallas_map150.png" width="1000" /> 
-
-<img src="Images\Rural\Crook_OR_map150.png" width="1000" />  
-
-<img src="Images\Rural\Kiowa_KS_map150.png" width="1000" />
-
-<img src="Images\Rural\Rusk_WI_map150.png" width="1000" />
-
-<img src="Images\Rural\Sierra_NM_Map150.png" width="1000" />
+#### Implement Distance Thresholds Based on Regional Density
+To address the challenges of varying KNN distances in Places with high density variability, it may be beneficial to implement distance thresholds based on regional density levels. By setting different epsilon values for areas with distinct parcel densities, we could build in gurad rails to prevent extreme over- or under-clustering. 
