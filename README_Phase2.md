@@ -16,7 +16,11 @@ The following sections will compare the performance of this adaptive epsilon app
 
 The proposed method involves a series of steps to compute and apply the adaptive epsilon. First, we apply k-means clustering to group parcels within the place boundary into regions of approximately 200 parcels per cluster. Next, a KD-Tree is built for each region to efficiently calculate the pairwise distances between parcels. These distances are then smoothed, and the "elbow" method is employed to identify a suitable epsilon value for each region. This epsilon is then used in the DBSCAN algorithm to identify same-owner parcels within each region.
 
+<img src="Images\phase2\I-III_Process.png" width="1000" />
+
 Afterward, a merging process is used to expand the identification of same-owner parcels across adjacent regions, ensuring that all parcels with the same owner are correctly clustered. The final result is a set of same-owner clusters, each with a unique cluster ID, which are ultimately used to define the boundaries of the final superparcel.
+
+<img src="Images\phase2\IV-V_Process.png" width="1000" />
 
 This adaptive approach allows for more accurate and meaningful clustering in urban environments, accommodating the spatial complexities inherent in dense, urban parcel distributions. 
 
