@@ -1,0 +1,2 @@
+[console_scripts]
+sps = cli:cli

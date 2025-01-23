@@ -1,10 +1,10 @@
 import logging
 import click
-import sp
+import sp_cmds
 
 
 @click.group(
-    help="A CLI tool for the Wildfire Aggregation Products: CNA or GUARD.",
+    help="A CLI Tool for Creating Super Parcels",
     context_settings={"help_option_names": ["-h", "--help"]},
 )
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose mode.")
@@ -24,7 +24,7 @@ def cli(ctx, verbose):
     
     )
     
-cli.add_command(sp.setup)
-cli.add_command(sp.build)
+cli.add_command(sp_cmds.setup)
+#cli.add_command(sp.build)
 
 

@@ -1,0 +1,11 @@
+setup.py
+gcslib_cp/__init__.py
+gcslib_cp/gcslib_cp.py
+sp_geoprocessing/__init__.py
+sp_geoprocessing/phase2.py
+superparcels.egg-info/PKG-INFO
+superparcels.egg-info/SOURCES.txt
+superparcels.egg-info/dependency_links.txt
+superparcels.egg-info/entry_points.txt
+superparcels.egg-info/requires.txt
+superparcels.egg-info/top_level.txt

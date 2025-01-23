@@ -3,7 +3,7 @@ import os
 import sys
 import glob
 import pandas as pd
-from phase2 import *
+from sp_geoprocessing.phase2 import *
 from tqdm import tqdm
 # ignore warnings
 import warnings

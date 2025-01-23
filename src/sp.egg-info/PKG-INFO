@@ -1,5 +1,3 @@
 Metadata-Version: 2.1
 Name: sp
 Version: 0.1
-Requires-Dist: tqdm
-Requires-Dist: click

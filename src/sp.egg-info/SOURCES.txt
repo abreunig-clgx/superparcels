@@ -1,7 +1,8 @@
 setup.py
+gcslib_cp/__init__.py
+gcslib_cp/gcslib_cp.py
 sp.egg-info/PKG-INFO
 sp.egg-info/SOURCES.txt
 sp.egg-info/dependency_links.txt
 sp.egg-info/entry_points.txt
-sp.egg-info/requires.txt
 sp.egg-info/top_level.txt
