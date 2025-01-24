@@ -2,7 +2,8 @@ setup.py
 gcslib_cp/__init__.py
 gcslib_cp/gcslib_cp.py
 sp_geoprocessing/__init__.py
-sp_geoprocessing/phase2.py
+sp_geoprocessing/build.py
+sp_geoprocessing/tools.py
 superparcels.egg-info/PKG-INFO
 superparcels.egg-info/SOURCES.txt
 superparcels.egg-info/dependency_links.txt
