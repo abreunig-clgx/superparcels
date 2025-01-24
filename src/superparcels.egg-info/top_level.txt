@@ -1,2 +1,0 @@
-gcslib_cp
-sp_geoprocessing

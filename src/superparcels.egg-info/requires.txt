@@ -1,4 +1,0 @@
-tqdm
-click
-google-cloud
-google-cloud-storage

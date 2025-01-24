@@ -1,7 +1,0 @@
-Metadata-Version: 2.1
-Name: superparcels
-Version: 0.1
-Requires-Dist: tqdm
-Requires-Dist: click
-Requires-Dist: google-cloud
-Requires-Dist: google-cloud-storage
