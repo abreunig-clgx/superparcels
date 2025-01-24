@@ -139,10 +139,11 @@ def build(ctx):
 @click.option('-dt', type=int, default=200, help="Distance threshold for clustering. Default is 200.")
 @click.option('-ss', type=int, default=3, help="Minimum number of samples for clustering. Default is 3.")
 @click.option('-at', type=int, default=None, help="Minimum area threshold for super parcel creation. Default is None.")
-@click.option('-rs', is_flag=True, help="Return single parcels. Default is False.")
+@click.option('-rs', is_flag=True, default=False, help="Return single parcels. Default is False.")
+@click.option('-qa', is_flag=True, default=False, help="Return single parcels. Default is False.")
 @click.option('-pb', type=click.Path(exists=False), help="Path to Place Boundaries Shapefile. FUTURE IMPLEMENTATION")
 @click.pass_context
-def sp1(ctx, bd, fips, cp, key, dt, ss, at, rs, pb):
+def sp1(ctx, bd, fips, cp, key, dt, ss, at, rs, qa, pb):
     click.echo("_________________________________________________________")
     logger.info("BUILDING SuperParcel Phase 1")
     click.echo("-")
@@ -191,7 +192,8 @@ def sp1(ctx, bd, fips, cp, key, dt, ss, at, rs, pb):
                     distance_threshold=dt,
                     sample_size=ss,
                     area_threshold=at,
-                    return_singles=True
+                    return_singles=rs,
+                    qa=qa
                 )
                 logger.info('Writing files...')
                 if len(superparcels) > 0:
@@ -223,7 +225,8 @@ def sp1(ctx, bd, fips, cp, key, dt, ss, at, rs, pb):
                     key_field=key,
                     distance_threshold=dt,
                     sample_size=ss,
-                    area_threshold=at
+                    area_threshold=at,
+                    qa=qa
                 )
                 logger.info('Writing files...')
                 if len(superparcels) > 0:
@@ -273,7 +276,8 @@ def sp1(ctx, bd, fips, cp, key, dt, ss, at, rs, pb):
                         distance_threshold=dt,
                         sample_size=ss,
                         at=at,
-                        return_singles=True
+                        return_singles=rs,
+                        qa=qa
                     )
                     logger.info('Writing files...')
                     click.echo("-")
@@ -306,7 +310,8 @@ def sp1(ctx, bd, fips, cp, key, dt, ss, at, rs, pb):
                         distance_threshold=dt,
                         sample_size=ss,
                         area_threshold=at,
-                        return_singles=False
+                        return_singles=qa,
+                        qa=qa
                     )
                     logger.info('Writing files...')
                     click.echo("-")

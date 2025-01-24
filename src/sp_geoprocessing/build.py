@@ -5,6 +5,8 @@ import glob
 import pandas as pd
 import geopandas as gpd
 from tqdm import tqdm
+import numpy as np
+import cProfile
 # ignore warnings
 import warnings
 warnings.filterwarnings('ignore')
@@ -19,6 +21,7 @@ def build_sp_fixed(
     sample_size=3,
     area_threshold=None,
     return_singles=False,
+    qa=False # if true, trigger cprofiler
     ):
     """
     Executes the clustering and super parcel creation process.
@@ -32,6 +35,10 @@ def build_sp_fixed(
     area_threshold (int): Minimum area threshold for super parcel creation.
     """
 
+    # setup cProfiler
+    if qa:
+        # enable cProfiler
+        pass
     
     utm = parcels.estimate_utm_crs().to_epsg()
     parcels = parcels.to_crs(epsg=utm)  
@@ -40,6 +47,13 @@ def build_sp_fixed(
 
     clustered_parcel_data = gpd.GeoDataFrame() # cluster data
     single_parcel_data = gpd.GeoDataFrame() # non-clustered data
+
+    """
+    ESHAN: tqdm is a progress bar. It is used to show the progress of the loop.
+    if running cProfile within loop, tqdm will not work properly. Remove function call.
+    Also be aware, your log will be filled with func times for each iteration...not sure
+    if that is what you want.
+    """
     for owner in tqdm(unique_owners, desc=f'{fips} Owners: ', ncols=100):
         owner_parcels = parcels[parcels['OWNER'] == owner] # ownder specific parcels
         

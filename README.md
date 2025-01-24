@@ -1,3 +1,33 @@
+# SuperParcels CLI Tool Instructions
+1. Activate the virtual environment
+```
+conda activate sp_dev
+```
+2. Install superparcels package
+```
+cd ../superparcels/src/
+pip install -e .
+```
+3. Test the CLI tool
+```
+sps -h
+```
+4. Run Setup in the CLI tool
+```
+sps setup config -bd <build-dir-path> -csv <local path to candidate parcel csv> -fips <Coressponding FIPS field in csv>
+```
+5. Run Build on the CLI tool
+```
+# Will run all fips in config.json
+sps build sps
+
+# Will run specific fips
+sps build sps -fips <fips>
+
+# To run with cProfiler, add..
+sps build sps -qa True
+```
+
 Austin Breunig
 January 16, 2025
 
