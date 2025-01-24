@@ -2,3 +2,6 @@ __pycache__/
 *.json
 # exclude config.json
 !config.json
+
+# local packages
+*.egg-info/
