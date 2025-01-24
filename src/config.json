@@ -1,9 +1,0 @@
-{
-    "BUILD_DIR": "D:\\Projects\\superparcels\\cli_testing",
-    "CANDIDATE_PARCELS": [
-        "D:\\Projects\\superparcels\\cli_testing\\inputs\\20097\\candidate_parcels_20097.shp",
-        "D:\\Projects\\superparcels\\cli_testing\\inputs\\35051\\candidate_parcels_35051.shp",
-        "D:\\Projects\\superparcels\\cli_testing\\inputs\\41013\\candidate_parcels_41013.shp",
-        "D:\\Projects\\superparcels\\cli_testing\\inputs\\55107\\candidate_parcels_55107.shp"
-    ]
-}
