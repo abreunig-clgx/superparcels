@@ -14,18 +14,18 @@ sps -h
 ```
 4. Run Setup in the CLI tool
 ```
-sps setup config -bd <build-dir-path> -csv <local path to candidate parcel csv> -fips <Coressponding FIPS field in csv>
+sps setup config -bd <build-dir-path> -csv <local path to candidate parcel csv> -fips <FIPS field in csv>
 ```
-5. Run Build on the CLI tool
+5. Run Build for Phase 1 on the CLI tool
 ```
 # Will run all fips in config.json
-sps build sps
+sps build sp1
 
 # Will run specific fips
-sps build sps -fips <fips>
+sps build sp1 -fips <fips>
 
 # To run with cProfiler, add..
-sps build sps -qa True
+sps build sp1 -qa True
 ```
 
 Austin Breunig
