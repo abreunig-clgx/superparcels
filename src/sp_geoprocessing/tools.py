@@ -262,45 +262,45 @@ def merge_cross_region_clusters(df, max_merge_distance=4):
 
     return df
 
-    def build_superparcels(df, buffer, dissolve_by='cluster_ID', area_threshold=None):
-        """
-        Dissolves clusters into super-parcels.
-        Returns a GeoDataFrame with super-parcels.
-        """
-        sp_dissolved = df.dissolve(by=dissolve_by).reset_index()
-        sp['geometry'] = sp['geometry'].buffer(buffer)
-        sp['geometry'] = sp['geometry'].buffer(-buffer)
-        
-        if area_threshold:
-            pass
-
-        return sp.explode(ignore_index=True)
-
-    def filter_area():
-        pass
-        #parcel_dissolve['area'] = parcel_dissolve['geometry'].area # total area of the cluster
-
-        #mean_area = parcel_dissolve.groupby('cluster_ID')['area'].mean() # mean area of the cluster
-        #super_parcel_ids = mean_area[mean_area > area_threshold].index # ids of clusters with mean area greater than threshold
-
-        #super_parcels = parcel_dissolve[parcel_dissolve['cluster_ID'].isin(super_parcel_ids)]
+def build_superparcels(df, buffer, dissolve_by='cluster_ID', area_threshold=None):
+    """
+    Dissolves clusters into super-parcels.
+    Returns a GeoDataFrame with super-parcels.
+    """
+    sp = df.dissolve(by=dissolve_by).reset_index()
+    sp['geometry'] = sp['geometry'].buffer(buffer)
+    sp['geometry'] = sp['geometry'].buffer(-buffer)
     
-        # POSSIBLE RANKING/SORTING?
-          # rank super parcels by area
-            #super_parcels['rank'] = super_parcels['area'].rank(ascending=False) 
-            #super_parcels = super_parcels.sort_values(by='rank', ascending=True)
-            #super_parcels = super_parcels.reset_index(drop=True)
+    if area_threshold:
+        pass
 
-    def num_2_short_form(number):
-        """
-        Short form text creation for 
-        display purposes
-        """
-        if number >= 1_000_000_000:
-            return f'{number/1_000_000_000:.1f}B'
-        elif number >= 1_000_000:
-            return f'{number/1_000_000:.1f}M'
-        elif number >= 1_000:
-            return f'{number/1_000:.1f}k'
-        else:
-            return str(number)
+    return sp.explode(ignore_index=True)
+
+def filter_area():
+    pass
+    #parcel_dissolve['area'] = parcel_dissolve['geometry'].area # total area of the cluster
+
+    #mean_area = parcel_dissolve.groupby('cluster_ID')['area'].mean() # mean area of the cluster
+    #super_parcel_ids = mean_area[mean_area > area_threshold].index # ids of clusters with mean area greater than threshold
+
+    #super_parcels = parcel_dissolve[parcel_dissolve['cluster_ID'].isin(super_parcel_ids)]
+
+    # POSSIBLE RANKING/SORTING?
+        # rank super parcels by area
+        #super_parcels['rank'] = super_parcels['area'].rank(ascending=False) 
+        #super_parcels = super_parcels.sort_values(by='rank', ascending=True)
+        #super_parcels = super_parcels.reset_index(drop=True)
+
+def num_2_short_form(number):
+    """
+    Short form text creation for 
+    display purposes
+    """
+    if number >= 1_000_000_000:
+        return f'{number/1_000_000_000:.1f}B'
+    elif number >= 1_000_000:
+        return f'{number/1_000_000:.1f}M'
+    elif number >= 1_000:
+        return f'{number/1_000:.1f}k'
+    else:
+        return str(number)

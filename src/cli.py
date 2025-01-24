@@ -25,6 +25,6 @@ def cli(ctx, verbose):
     )
     
 cli.add_command(sp_cmds.setup)
-#cli.add_command(sp.build)
+cli.add_command(sp_cmds.build)
 
 

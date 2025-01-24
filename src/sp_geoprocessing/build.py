@@ -3,47 +3,22 @@ import os
 import sys
 import glob
 import pandas as pd
-from sp_geoprocessing.phase2 import *
+import geopandas as gpd
 from tqdm import tqdm
 # ignore warnings
 import warnings
 warnings.filterwarnings('ignore')
 
-
-# PARAMS
-#sample_size = 3
-#area_threshold = 300_000
-#data_dir = r'D:\Projects\superparcels\data\Phase2\la_ca'
-# candidate county shapefile
-
-# OUTSIDE CONFIG IN MAIN
-  #fips = os.path.basename(fi).split('_')[2]
-   # subdir = os.path.dirname(fi)
-
-    ##print(f'Processing {os.path.basename(subdir)}: {fips}...')
-
-#parcels = gpd.read_file(fi)
-
-
-#for fi in glob.glob(os.path.join(data_dir, '*candidates.shp')):
-
-# AT END FOR WRITING
-#if len(single_parcel_data) > 0:
-#        single_parcel_data.to_file(os.path.join(subdir, f'singles_{fips}_dbscan{dbscan_distance}-{sample_size}_rbuff.shp'))#
-
-
-#    super_parcels.to_file(os.path.join(subdir, f'sp_{fips}_dbscan{dbscan_distance}-{sample_size}_rbuff.shp'))
-    #print('_________________________________________________________')
-    #print('_________________________________________________________')
-    
-
+from sp_geoprocessing.tools import *
   
 def build_sp_fixed(
     parcels, 
+    fips,
     key_field='OWNER',
     distance_threshold=200, 
     sample_size=3,
     area_threshold=None,
+    return_singles=False,
     ):
     """
     Executes the clustering and super parcel creation process.
@@ -79,7 +54,7 @@ def build_sp_fixed(
             single_parcel_data = pd.concat([single_parcel_data, owner_parcels], ignore_index=True)  
             single_parcel_data = add_attributes(
                 single_parcel_data,
-                place_id=place_id,
+                #place_id=place_id,
                 )
             continue
 
@@ -93,7 +68,7 @@ def build_sp_fixed(
             df=owner_parcels, 
             list_of_ids=outlier_ids, 
             field='cluster'
-        ).drop(columns=['cluster', 'area'])
+        ).drop(columns=['cluster', 'cluster_area'])
 
         single_parcel_data = pd.concat([single_parcel_data, add_to_singles], ignore_index=True)
 
@@ -126,10 +101,6 @@ def build_sp_fixed(
         clustered_parcel_data['OWNER'] + '_' +
         clustered_parcel_data['cluster'].astype(str)
     )
-
-    # build cluster specific IDs
-    clustered_parcel_data['cluster_ID'] = clustered_parcel_data['OWNER'] + '_' + clustered_parcel_data['cluster'].astype(str)
-    single_parcel_data['cluster_ID'] = single_parcel_data['OWNER'] + '_' + single_parcel_data['cluster'].astype(str)
 
     # REFACTOR: SUPER PARCELS creation with area theshold option
     if area_threshold:
