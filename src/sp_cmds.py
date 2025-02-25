@@ -1,4 +1,5 @@
 import os
+import sys
 import glob
 import click
 import pandas as pd
@@ -71,7 +72,7 @@ def config(ctx, bd, csv, fips, js):
         """
         Convert a CSV file to a dataframe
         """
-        df = pd.read_csv(csv_path, dtype=dtypes)
+        df = pd.read_csv(csv_path, dtype=dtypes, compression='gzip')
 
         return df
 
@@ -79,7 +80,7 @@ def config(ctx, bd, csv, fips, js):
         """
         Get unique FIPS codes from a dataframe
         """
-        return df[filter_by].unique()
+        return df[filter_by].unique().tolist()
     
     def shp_conversion(df, crs='EPSG:4326', where=None):
         if where:
@@ -235,7 +236,6 @@ def sp1(ctx, bd, fips, cp, key, dt, mp, ss, at, qa, pb):
         for dist_thresh in dt:
             sp_args.append((fi, current_fips, key, dist_thresh, ss, at, qa, output_dir))
 
-    logger.debug(f"sp_args: {sp_args}")
     
     if not mp:
         # loop through each distance threshold
@@ -273,10 +273,12 @@ def sp1(ctx, bd, fips, cp, key, dt, mp, ss, at, qa, pb):
         for batch in batches:
             logger.info('______________________')
             batch_ids = [args[1] for args in batch]  # Using FIPS from the tuple
+            dt_ids = [args[3] for args in batch]  # Using distance threshold from the tuple
             batch_output_dirs = [args[-1] for args in batch]  # Using output directory from the tuple
             batch = [args[:-1] for args in batch]  # Removing output directory from the tuple
 
             logger.info(f'Processing Batch: {batch_ids}')
+            logger.info(f'Distance Thresholds: {dt_ids}')
 
             results = mp_framework(build_sp_fixed, batch, n_jobs=mp) # insert all args minus output directory
 

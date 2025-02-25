@@ -10,9 +10,11 @@ import cProfile
 # ignore warnings
 import warnings
 warnings.filterwarnings('ignore')
-
+import logging
 from sp_geoprocessing.tools import *
-  
+from sp_geoprocessing.tools import setup_logger
+
+logger = setup_logger()
 def build_sp_fixed(
     parcels, 
     fips,
@@ -33,7 +35,15 @@ def build_sp_fixed(
     sample_size (int): Minimum number of samples for DBSCAN clustering.
     area_threshold (int): Minimum area threshold for super parcel creation.
     """
-
+    class TqdmToLogger:
+        def write(self, message):
+            # Avoid logging empty messages (e.g., newlines)
+            message = message.strip()
+            if message:
+                logger.info(message)
+        def flush(self):
+            pass
+    parcels = gpd.read_file(parcels)
     # setup cProfiler
     if qa:
         # enable cProfiler
@@ -42,12 +52,13 @@ def build_sp_fixed(
     utm = parcels.estimate_utm_crs().to_epsg()
     parcels = parcels.to_crs(epsg=utm)  
 
-    unique_owners = parcels['OWNER'].unique()
+    unique_owners = parcels[key_field].unique()
 
     clustered_parcel_data = gpd.GeoDataFrame() # cluster data
     #single_parcel_data = gpd.GeoDataFrame() # non-clustered data
-
-    for owner in tqdm(unique_owners, desc=f'{fips} Owners: ', ncols=100):
+    logger.info(f'Building super parcels for {fips} and dt {distance_threshold}...')
+   
+    for owner in unique_owners:
         owner_parcels = parcels[parcels[key_field] == owner] # ownder specific parcels
         
         # REFACTOR: CLUSTERING
@@ -105,7 +116,7 @@ def build_sp_fixed(
 
     # REFACTOR: cluster ID       
     clustered_parcel_data['cluster_ID'] = (
-        clustered_parcel_data['OWNER'] + '_' +
+        clustered_parcel_data[key_field] + '_' +
         clustered_parcel_data['cluster'].astype(str)
     )
 
@@ -123,9 +134,9 @@ def build_sp_fixed(
 
     # super parcel ID eg. owner + cluster ID + ID of each unique super parcel
     super_parcels['sp_id'] = super_parcels['cluster_ID'] + "_" + super_parcels.groupby('cluster_ID').cumcount().astype(str) 
-    super_parcels = super_parcels[['sp_id', 'OWNER', 'pcount', 'geometry']]
+    super_parcels = super_parcels[['sp_id', key_field, 'pcount', 'geometry']]
 
-    
+    logger.info(f'Finished building super parcels for {fips} and dt {distance_threshold}...')
     return super_parcels
     
 
