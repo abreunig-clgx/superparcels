@@ -20,7 +20,6 @@ def build_sp_fixed(
     distance_threshold=200, 
     sample_size=3,
     area_threshold=None,
-    return_singles=False,
     qa=False # if true, trigger cprofiler
     ):
     """
@@ -46,16 +45,10 @@ def build_sp_fixed(
     unique_owners = parcels['OWNER'].unique()
 
     clustered_parcel_data = gpd.GeoDataFrame() # cluster data
-    single_parcel_data = gpd.GeoDataFrame() # non-clustered data
+    #single_parcel_data = gpd.GeoDataFrame() # non-clustered data
 
-    """
-    ESHAN: tqdm is a progress bar. It is used to show the progress of the loop.
-    if running cProfile within loop, tqdm will not work properly. Remove function call.
-    Also be aware, your log will be filled with func times for each iteration...not sure
-    if that is what you want.
-    """
     for owner in tqdm(unique_owners, desc=f'{fips} Owners: ', ncols=100):
-        owner_parcels = parcels[parcels['OWNER'] == owner] # ownder specific parcels
+        owner_parcels = parcels[parcels[key_field] == owner] # ownder specific parcels
         
         # REFACTOR: CLUSTERING
         clusters = build_owner_clusters(
@@ -65,11 +58,11 @@ def build_sp_fixed(
             )
 
         if len(clusters) == 0: # EMPTY: NO CLUSTERS
-            single_parcel_data = pd.concat([single_parcel_data, owner_parcels], ignore_index=True)  
-            single_parcel_data = add_attributes(
-                single_parcel_data,
-                #place_id=place_id,
-                )
+            #single_parcel_data = pd.concat([single_parcel_data, owner_parcels], ignore_index=True)  
+            #single_parcel_data = add_attributes(
+            #    single_parcel_data,
+            #    #place_id=place_id,
+            #    )
             continue
 
         owner_parcels['cluster'] = clusters # clustert ID
@@ -78,20 +71,20 @@ def build_sp_fixed(
         
         outlier_ids, clean_counts = segregate_outliers(counts, -1)
 
-        add_to_singles = locate_in_df(
-            df=owner_parcels, 
-            list_of_ids=outlier_ids, 
-            field='cluster'
-        ).drop(columns=['cluster', 'cluster_area'])
+        #add_to_singles = locate_in_df(
+        #    df=owner_parcels, 
+        #    list_of_ids=outlier_ids, 
+        #    field='cluster'
+        #).drop(columns=['cluster', 'cluster_area'])
 
-        single_parcel_data = pd.concat([single_parcel_data, add_to_singles], ignore_index=True)
+        #single_parcel_data = pd.concat([single_parcel_data, add_to_singles], ignore_index=True)
 
         #REFACTOR: WHAT FIELDS GO HERE??
-        if len(single_parcel_data) > 0:
-            single_parcel_data = add_attributes(
-                single_parcel_data,
-                #place_id=place_id,
-            )
+        #if len(single_parcel_data) > 0:
+        #    single_parcel_data = add_attributes(
+        #        single_parcel_data,
+        #        #place_id=place_id,
+        #    )
 
         cluster_filter = remove_from_df(
             df=owner_parcels, 
@@ -132,10 +125,8 @@ def build_sp_fixed(
     super_parcels['sp_id'] = super_parcels['cluster_ID'] + "_" + super_parcels.groupby('cluster_ID').cumcount().astype(str) 
     super_parcels = super_parcels[['sp_id', 'OWNER', 'pcount', 'geometry']]
 
-    if return_singles:
-        return super_parcels, single_parcel_data
-    else:
-        return super_parcels
+    
+    return super_parcels
     
 
 

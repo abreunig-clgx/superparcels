@@ -7,8 +7,10 @@ from sklearn.cluster import DBSCAN, KMeans
 from shapely.geometry import MultiPolygon, MultiPoint
 from scipy.spatial import cKDTree
 from scipy.spatial.distance import cdist
-
+import ast
 from typing import List
+import logging
+import multiprocessing
 
 """ Functions for KMeans clustering """
 def build_place_regions(df, max_parcels_per_cluster):
@@ -304,3 +306,88 @@ def num_2_short_form(number):
         return f'{number/1_000:.1f}k'
     else:
         return str(number)
+
+def to_int_list(ctx, param, value):
+    """
+    Convert an input value to a list of integers.
+
+    This callback function parses a string input into a list of integers by safely evaluating the string using 
+    ast.literal_eval.
+
+    Parameters:
+        ctx: Click context (unused).
+        param: Click parameter (unused).
+        value (str): The input string to be converted.
+
+    Returns:
+        list: A list of integers parsed from the input value.
+    """
+    if value:
+        result = ast.literal_eval(value)
+        return [int(item) for item in result]
+    else:
+        return []
+    
+
+def setup_logger():
+    """
+    Set up and return a configured logger.
+
+    This function creates a logger using Python's logging module, sets its level to INFO, defines a formatter that 
+    includes the timestamp, process name, log level, and message, and attaches a StreamHandler to output logs to 
+    the console.
+
+    Returns:
+        logging.Logger: A configured logger instance.
+    """
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO) # debug hard set for running within pytest debugger
+    
+    formatter = logging.Formatter('%(asctime)s - %(processName)s - %(levelname)s - %(message)s')
+    
+    handler = logging.StreamHandler()
+    handler.setFormatter(formatter)
+    
+    logger.addHandler(handler)
+    
+    return logger
+
+def create_batches(arg_tuples, batch_size):
+    """
+    Split a list of argument tuples into batches of a specified size.
+
+    This generator function yields batches (sublists) of argument tuples for processing, each with a length 
+    equal to 'batch_size' (except possibly the last batch).
+
+    Parameters:
+        arg_tuples (list): A list of argument tuples.
+        batch_size (int): The desired number of tuples in each batch.
+
+    Yields:
+        list: A batch (sublist) of argument tuples.
+    """
+    for i in range(0, len(arg_tuples), batch_size):
+        yield arg_tuples[i:i + batch_size]
+
+
+def mp_framework(func, arg_tuples, n_jobs=None):
+    """
+    Execute a function in parallel using multiprocessing.
+
+    This function provides a multiprocessing framework to execute the specified function in parallel across multiple 
+    processes. It uses a process pool to apply the function to each tuple of arguments in 'arg_tuples' via starmap.
+
+    Parameters:
+        func (callable): The function to be executed in parallel.
+        arg_tuples (list of tuples): A list of argument tuples to pass to the function.
+        n_jobs (int, optional): The number of parallel processes to use. If None, the default is used.
+
+    Returns:
+        None
+    """
+    
+    with multiprocessing.Pool(processes=n_jobs) as pool:
+        results = pool.starmap(func, arg_tuples)
+
+    return results
+        

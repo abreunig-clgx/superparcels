@@ -9,6 +9,7 @@ from shapely import wkt
 import logging
 from gcslib_cp import gcslib_cp
 from sp_geoprocessing.build import build_sp_fixed
+from sp_geoprocessing.tools import to_int_list
 
 # Configure the root logger
 logger = logging.getLogger(__name__)
@@ -31,7 +32,7 @@ def setup(ctx):
 
 @setup.command(help="Builds config json file for SuperParcel build.")
 @click.option('-bd', type=click.Path(exists=False), help="Directory where you want the build to occur.")
-@click.option('-csv', type=click.Path(exists=False), help="Path to HUC shapefile. Local or GCS path.")
+@click.option('-csv', type=click.Path(exists=False), help="Path to Candidate Parcel csv. Local or GCS path.")
 @click.option('-fips', type=str, default=None, help="Field to use for filtering FIPS codes. Default is 'FIPS'.")
 @click.option('-js', type=click.Path(exists=False), help="Optional: Path to GCP JSON key file.")
 @click.pass_context
@@ -112,6 +113,7 @@ def config(ctx, bd, csv, fips, js):
     config["BUILD_DIR"] = bd
     # if has local directories else pull from GCS
     config["CANDIDATE_PARCELS"] = all_gdf_paths
+    config['FIPS_LIST'] = fips_list
     logger.debug(f"Candidate Parcels: {all_gdf_paths}")
     
     try:
@@ -131,19 +133,32 @@ def build(ctx):
         logger.setLevel(logging.DEBUG)
 
 @build.command(
-    help="Builds SuperParcel Phase 1. Highly recommended to run setup first to create config file. If not, provide the necessary parameters.")
-@click.option('-bd', type=click.Path(exists=False), help="Directory where you want the build to occur.")
-@click.option('-fips', type=str, help="FIPS code to build SuperParcel for. If not provided, will build for all FIPS codes found in config.json")
-@click.option('-cp', type=click.Path(exists=False), help="Path to County Candidate Parcel shapefile. If not provided, will use config.json")
-@click.option('-key', type=str, default='OWNER', help="Field to use for clustering. Default is 'OWNER'.")
-@click.option('-dt', type=int, default=200, help="Distance threshold for clustering. Default is 200.")
-@click.option('-ss', type=int, default=3, help="Minimum number of samples for clustering. Default is 3.")
-@click.option('-at', type=int, default=None, help="Minimum area threshold for super parcel creation. Default is None.")
-@click.option('-rs', is_flag=True, default=False, help="Return single parcels. Default is False.")
-@click.option('-qa', is_flag=True, default=False, help="Return single parcels. Default is False.")
-@click.option('-pb', type=click.Path(exists=False), help="Path to Place Boundaries Shapefile. FUTURE IMPLEMENTATION")
+    help="Builds SuperParcel Phase 1. Highly recommended to run setup first to create config file. If not, provide the necessary parameters."
+)
+@click.option('-bd', type=click.Path(), default=None,
+              help="Directory where you want the build to occur.")
+@click.option('-fips', default=None,
+              help="FIPS code(s) to build SuperParcel for. If not provided, will build for all FIPS codes found in config.json",
+              callback=parse_list)
+@click.option('-cp', type=click.Path(), default=None,
+              help="Path to County Candidate Parcel shapefile. If not provided, will use config.json")
+@click.option('-key', type=str, default='OWNER',
+              help="Field to use for clustering. Default is 'OWNER'.")
+@click.option('-dt', default=['200'],
+              help="Distance threshold list for clustering. Default is 200.", callback=to_int_list)
+@click.option('-mp', type=int, default=None,
+              help="Batch size for multiprocessing. Default is None.")
+@click.option('-ss', type=int, default=3,
+              help="Minimum number of samples for clustering. Default is 3.")
+@click.option('-at', type=int, default=None,
+              help="Minimum area threshold for super parcel creation. Default is None.")
+@click.option('-qa', is_flag=True, default=False,
+              help="Enables cProfiler. Default is False.")
+@click.option('-pb', type=click.Path(), default=None,
+              help="Path to Place Boundaries Shapefile. FUTURE IMPLEMENTATION")
 @click.pass_context
-def sp1(ctx, bd, fips, cp, key, dt, ss, at, rs, qa, pb):
+def sp1(ctx, bd, fips, cp, key, dt, mp, ss, at, qa, pb):
+    from sp_geoprocessing.tools import create_batches, mp_framework
     click.echo("_________________________________________________________")
     logger.info("BUILDING SuperParcel Phase 1")
     click.echo("-")
@@ -151,185 +166,141 @@ def sp1(ctx, bd, fips, cp, key, dt, ss, at, rs, qa, pb):
 
     def check_paths(*args):
         for arg in args:
-            if not arg:
-                raise logger.info(f'Parameter is missing.')
-            else:
-                if not os.path.exists(arg):
-                    raise logger.error(f"File does not exist: {arg}")
+            if arg and not os.path.exists(arg):
+                raise click.ClickException(f"File or directory does not exist: {arg}")
 
-    def build_filename(prefix, arg_delimeter, suffix, *args):
+    def build_filename(prefix, delimiter, suffix, *args):
         """
-        Build a filename from a list of arguments
-        Example: build_filename('spfixed', '-', 'dbscan', 200, 3, 300_000)
-        Returns: 'spfixed-200-3-300_000-dbscan'
+        Build a filename from a list of arguments.
+        Example: build_filename('spfixed', '-', 'dbscan', 200, 3, 300000)
+        Returns: 'spfixed-200-3-300000-dbscan'
         """
-
-        args_str = arg_delimeter.join(map(str, args))
+        args_str = delimiter.join(map(str, args))
         return f"{prefix}-{args_str}-{suffix}"
 
+    # Attempt to load configuration from file (if provided via ctx)
+    if os.path.exists(ctx.obj["CONFIG"]):
+        with open(ctx.obj["CONFIG"], "r") as config_file:
+            config = json.load(config_file)
+    else:
+        logger.error('Cannot find config.json!!!')
 
-    if pb:
-        logger.info(f'Running with Place Boundaries')
-        pass # implement later
+    # Use user-provided build directory if available; otherwise, fall back to config.
+    bd = bd or config.get("BUILD_DIR")
+    if not bd:
+        raise click.ClickException("Build directory must be provided as an argument (-bd) or in the config file.")
+    # Create build directory if it does not exist.
+    os.makedirs(bd, exist_ok=True)
+    check_paths(bd)
 
-    try:
-        if cp: # user input single county file to run process
-            if not fips:
-                raise logger.error(f"No FIPS code provided.")
-            # start reading immediately
-            logger.info(f'Reading {os.path.basename(cp)}...')
-            check_paths(cp, bd)
-            output_dir = os.path.join(bd, 'outputs', f'{fips}')
-            os.makedirs(output_dir, exist_ok=True)
-
-            parcels = gpd.read_file(cp)
-
-            if rs: # return singles
-                superparcels, singles = build_sp_fixed(
-                    parcels=parcels,
-                    fips=fips,
-                    key_field=key,
-                    distance_threshold=dt,
-                    sample_size=ss,
-                    area_threshold=at,
-                    return_singles=rs,
-                    qa=qa
-                )
-                logger.info('Writing files...')
-                if len(superparcels) > 0:
-                    if at is not None:
-                        fn = build_filename(f'spfixed_{fips}', '-', f'dt{dt}', f'ss{ss}', f'at{at}')
-                    else:
-                        fn = build_filename(f'spfixed_{fips}', '-', f'dt{dt}', f'ss{ss}')
-
-                    superparcels.to_file(os.path.join(output_dir, f'{fn}.shp'))
-                else:
-                    raise logger.error(f"No super parcels created.")
-                        
-
-                if len(singles) > 0:
-                    if at is not None:
-                        fn = build_filename(f'singles_{fips}', '-', f'dt{dt}', f'ss{ss}', f'at{at}')
-                    else:
-                        fn = build_filename(f'singles_{fips}', '-', f'dt{dt}', f'ss{ss}')
-
-                    singles.to_file(os.path.join(output_dir, f'{fn}.shp'))
-
-                else:
-                    raise logger.error(f"No single parcels created.")
-
-            else: # no return singles
-                superparcels = build_sp_fixed(
-                    parcels=parcels,
-                    fips=fips,
-                    key_field=key,
-                    distance_threshold=dt,
-                    sample_size=ss,
-                    area_threshold=at,
-                    qa=qa
-                )
-                logger.info('Writing files...')
-                if len(superparcels) > 0:
-                    logger.debug(f'Super Parcel Count: {len(superparcels)}')
-                    if at is not None:
-                        fn = build_filename(f'spfixed_{fips}', '-', f'dt{dt}', f'ss{ss}', f'at{at}')
-                    else:
-                        fn = build_filename(f'spfixed_{fips}', '-', f'dt{dt}', f'ss{ss}')
-
-                    superparcels.to_file(os.path.join(output_dir, f'{fn}.shp'))
-                else:
-                    raise logger.error(f"No super parcels created.")
-        else:
-            # read from config
-            config = json.load(open(ctx.obj["CONFIG"], 'r'))
-            logger.debug(f"Config: {config}")
-            cp_fi_list = config["CANDIDATE_PARCELS"]
-            bd = config["BUILD_DIR"]
-
-            check_paths(bd)
-            
-            # check if provided FIPS
-            if fips:
-                cp_fi_list = [fi for fi in cp_fi_list if fips in fi]
-
-            if len(cp_fi_list) == 0:
-                raise logger.error(f"No candidate parcels found in config file.")
-            
-            for fi in cp_fi_list:
-                check_paths(fi)
-                        
-            logger.debug(f"Files: {cp_fi_list}")
-            logger.debug(f"Build Directory: {bd}")
-                
-            for fi in cp_fi_list:
-                logger.info(f'Processing {os.path.basename(fi)}...')
-                fips = os.path.basename(fi).split('_')[2].split('.')[0]
-                output_dir = os.path.join(bd, 'outputs', f'{fips}')
-                os.makedirs(output_dir, exist_ok=True)
-
-                parcels = gpd.read_file(fi)
-                if rs: # return singles
-                    super_parcels, singles = build_sp_fixed(
-                        parcels=parcels,
-                        fips=fips,
-                        key_field=key,
-                        distance_threshold=dt,
-                        sample_size=ss,
-                        at=at,
-                        return_singles=rs,
-                        qa=qa
-                    )
-                    logger.info('Writing files...')
-                    click.echo("-")
-                    click.echo("-")
-                    if len(super_parcels) > 0:
-                        if at is not None:
-                            fn = build_filename(f'spfixed_{fips}', '-', f'dt{dt}', f'ss{ss}', f'at{at}')
-                        else:
-                            fn = build_filename(f'spfixed_{fips}', '-', f'dt{dt}', f'ss{ss}')
-
-                        super_parcels.to_file(os.path.join(output_dir, f'{fn}.shp'))
-                    else:
-                        raise logger.error(f"No super parcels created.")
-                
-                    if len(singles) > 0:
-                        if at is not None:
-                            fn = build_filename(f'singles_{fips}', '-', f'dt{dt}', f'ss{ss}', f'at{at}')
-                        else:
-                            fn = build_filename(f'singles_{fips}', '-', f'dt{dt}', f'ss{ss}')
-
-                        singles.to_file(os.path.join(output_dir, f'{fn}.shp'))
-                    else:
-                        raise logger.error(f"No single parcels created.")
-
-                else: # no return singles
-                    super_parcels = build_sp_fixed(
-                        parcels=parcels,
-                        fips=fips,
-                        key_field=key,
-                        distance_threshold=dt,
-                        sample_size=ss,
-                        area_threshold=at,
-                        return_singles=qa,
-                        qa=qa
-                    )
-                    logger.info('Writing files...')
-                    click.echo("-")
-                    click.echo("-")
-                    if len(super_parcels) > 0:
-                        if at is not None:
-                            fn = build_filename(f'spfixed_{fips}', '-', f'dt{dt}', f'ss{ss}', f'at{at}')
-                        else:
-                            fn = build_filename(f'spfixed_{fips}', '-', f'dt{dt}', f'ss{ss}')
-
-                        super_parcels.to_file(os.path.join(output_dir, f'{fn}.shp'))
-                    
-                    else:
-                        raise logger.error(f"No super parcels created.")
-                
-    except Exception as e:
-        raise logger.error(f"PROCESS ERROR: {e}")
+    # Determine candidate parcel file(s)
+    cp_files = []
+    if cp:
+        # User provided a single candidate file.
+        cp_files = [cp]
+        if not fips:
+            raise click.ClickException("When using a single county file (-cp), please provide a FIPS code (-fips).")
+    else:
+        # Fall back to config candidate parcel files.
+        cp_files = config.get("CANDIDATE_PARCELS", [])
+        fips = config.get("FIPS_LIST", [])
+        if not cp_files:
+            raise click.ClickException("No candidate parcels provided via argument (-cp) or found in the config file.")
+       
+        if not fips:
+            raise click.ClickException("No FIPS codes found in the config file.")
         
+        cp_files = [fi for fi in cp_files if any(fip in fi for fip in fips)]
+        if not cp_files:
+            raise click.ClickException("No candidate parcel files match the provided FIPS code(s).")
+
+    # Process Place Boundaries if provided (future implementation)
+    if pb:
+        logger.info("Running with Place Boundaries (feature not yet implemented).")
+        # TODO: Implement processing with place boundaries.
+
+    # Process each candidate file
+    sp_args = []
+    for fi in cp_files:
+        check_paths(fi)
+        matching_fips = [fip for fip in fips if fip in fi]
+        if not matching_fips:
+            raise click.ClickException(f"Could not determine FIPS code from file: {fi}")
+        current_fips = matching_fips[0]
+        logger.info(f'Collection {os.path.basename(fi)} for FIPS {current_fips}...')
+        output_dir = os.path.join(bd, 'outputs', current_fips)
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Build sp_args for each distance threshold for the current file
+        for dist_thresh in dt:
+            sp_args.append((fi, current_fips, key, dist_thresh, ss, at, qa, output_dir))
+
+    logger.debug(f"sp_args: {sp_args}")
+    
+    if not mp:
+        # loop through each distance threshold
+        for args in sp_args:
+            superparcels = build_sp_fixed(
+                parcels=args[0],
+                fips=args[1],
+                key_field=args[2],
+                distance_threshold=args[3],
+                sample_size=args[4],
+                area_threshold=args[5],
+                qa=args[6],
+            )
+            logger.info('Writing files...')
+            if superparcels is not None and len(superparcels) > 0:
+                _fips = args[1]
+                _dt = args[3]
+                _ss = args[4]
+                _at = args[5]
+
+                if _at is not None:
+                    fn = build_filename(f'spfixed_{_fips}', '-', f'dt{_dt}', f'ss{_ss}', f'at{_at}')
+                else:
+                    fn = build_filename(f'spfixed_{_fips}', '-', f'dt{_dt}', f'ss{_ss}')
+
+                out_path = os.path.join(args[-1], f'{fn}.shp') # last arg is output directory
+                superparcels.to_file(out_path)
+                logger.info(f"Wrote super parcels to {out_path}")
+            else:
+                logger.error(f"No super parcels created for FIPS {_fips}.")
+
+    else:
+        
+        batches = list(create_batches(sp_args, mp))
+        for batch in batches:
+            logger.info('______________________')
+            batch_ids = [args[1] for args in batch]  # Using FIPS from the tuple
+            batch_output_dirs = [args[-1] for args in batch]  # Using output directory from the tuple
+            batch = [args[:-1] for args in batch]  # Removing output directory from the tuple
+
+            logger.info(f'Processing Batch: {batch_ids}')
+
+            results = mp_framework(build_sp_fixed, batch, n_jobs=mp) # insert all args minus output directory
+
+            for id, result in enumerate(results):
+                result_output_dir = batch_output_dirs[id]
+                if result is not None and len(result) > 0:
+                    _fips = result[1]
+                    _dt = result[3]
+                    _ss = result[4]
+                    _at = result[5]
+
+                    if _at is not None:
+                        fn = build_filename(f'spfixed_{_fips}', '-', f'dt{_dt}', f'ss{_ss}', f'at{_at}')
+                    else:
+                        fn = build_filename(f'spfixed_{_fips}', '-', f'dt{_dt}', f'ss{_ss}')
+
+                    out_path = os.path.join(result_output_dir, f'{fn}.shp')
+                    result.to_file(out_path)
+                    logger.info(f"Wrote super parcels to {out_path}")
+                else:    
+                    logger.error(f"No super parcels created for FIPS {_fips}.")
+        
+
     logger.info("BUILD COMPLETE.")
     click.echo("_________________________________________________________")
+
          
