@@ -274,6 +274,8 @@ def sp1(ctx, bd, fips, cp, key, dt, mp, ss, at, qa, pb):
             logger.info('______________________')
             batch_ids = [args[1] for args in batch]  # Using FIPS from the tuple
             dt_ids = [args[3] for args in batch]  # Using distance threshold from the tuple
+            ss_ids = [args[4] for args in batch]  # Using sample size from the tuple
+            at_ids = [args[5] for args in batch]  # Using area threshold from the tuple
             batch_output_dirs = [args[-1] for args in batch]  # Using output directory from the tuple
             batch = [args[:-1] for args in batch]  # Removing output directory from the tuple
 
@@ -285,10 +287,10 @@ def sp1(ctx, bd, fips, cp, key, dt, mp, ss, at, qa, pb):
             for id, result in enumerate(results):
                 result_output_dir = batch_output_dirs[id]
                 if result is not None and len(result) > 0:
-                    _fips = result[1]
-                    _dt = result[3]
-                    _ss = result[4]
-                    _at = result[5]
+                    _fips = batch_ids[id]
+                    _dt = dt_ids[id]
+                    _ss = ss_ids[id]
+                    _at = at_ids[id]
 
                     if _at is not None:
                         fn = build_filename(f'spfixed_{_fips}', '-', f'dt{_dt}', f'ss{_ss}', f'at{_at}')

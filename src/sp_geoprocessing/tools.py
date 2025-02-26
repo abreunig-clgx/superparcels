@@ -270,8 +270,8 @@ def build_superparcels(df, buffer, dissolve_by='cluster_ID', area_threshold=None
     Returns a GeoDataFrame with super-parcels.
     """
     sp = df.dissolve(by=dissolve_by).reset_index()
-    sp['geometry'] = sp['geometry'].buffer(buffer)
-    sp['geometry'] = sp['geometry'].buffer(-buffer)
+    sp['geometry'] = sp['geometry'].buffer(buffer, join_style='mitre')
+    sp['geometry'] = sp['geometry'].buffer(-buffer, join_style='mitre')
     
     if area_threshold:
         pass
