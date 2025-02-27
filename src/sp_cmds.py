@@ -307,4 +307,29 @@ def sp1(ctx, bd, fips, cp, key, dt, mp, ss, at, qa, pb):
     logger.info("BUILD COMPLETE.")
     click.echo("_________________________________________________________")
 
+@build.command(
+    help="Build Exploratory Analysis for Distance Thresholds. IN-DEVELOPMENT"
+)
+@click.option('-fips', type=str, default=None,
+                help="FIPS code(s) to build SuperParcel for. If not provided, will build for all FIPS codes found in config.json")
+@click.option('-dd', '--data-dir', type=click.Path(), default=None,
+                help="Root directory where data is located.")
+@click.pass_context
+def dtepa(ctx, fips, data_dir):
+    from sp_geoprocessing.build import dt_exploratory_analysis
+    click.echo("_________________________________________________________")
+    logger.info("BUILDING Distance Threshold Explroatory Analysis")
+    click.echo("-")
+    click.echo("-")
+
+    # Attempt to load configuration from file (if provided via ctx)
+    if os.path.exists(ctx.obj["CONFIG"]):
+        with open(ctx.obj["CONFIG"], "r") as config_file:
+            config = json.load(config_file)
+    else:
+        logger.error('Cannot find config.json!!!')
+
+
+    dt_exploratory_analysis(fips=fips, data_dir=data_dir)
+
          
