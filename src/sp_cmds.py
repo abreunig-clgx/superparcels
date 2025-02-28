@@ -72,7 +72,7 @@ def config(ctx, bd, csv, fips, js):
         """
         Convert a CSV file to a dataframe
         """
-        df = pd.read_csv(csv_path, dtype=dtypes, compression='gzip')
+        df = pd.read_csv(csv_path, dtype=dtypes, compression='gzip', encoding='utf-8')
 
         return df
 
@@ -204,17 +204,21 @@ def sp1(ctx, bd, fips, cp, key, dt, mp, ss, at, qa, pb):
     else:
         # Fall back to config candidate parcel files.
         cp_files = config.get("CANDIDATE_PARCELS", [])
-        fips = config.get("FIPS_LIST", [])
+        if not fips:
+            try:
+                fips = config.get("FIPS_LIST", [])
+            except KeyError:
+                raise click.ClickException("FIPS code(s) must be provided as an argument (-fips) or in the config file.")
         if not cp_files:
             raise click.ClickException("No candidate parcels provided via argument (-cp) or found in the config file.")
-       
-        if not fips:
-            raise click.ClickException("No FIPS codes found in the config file.")
+            
         
-        cp_files = [fi for fi in cp_files if any(fip in fi for fip in fips)]
+        # filter candidate parcel files by FIPS code(s)
+        cp_files = [cp for cp in cp_files if any(fip in
+                                                  os.path.basename(cp) for fip in fips)]
         if not cp_files:
             raise click.ClickException("No candidate parcel files match the provided FIPS code(s).")
-
+        
     # Process Place Boundaries if provided (future implementation)
     if pb:
         logger.info("Running with Place Boundaries (feature not yet implemented).")

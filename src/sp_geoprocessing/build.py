@@ -114,7 +114,7 @@ def build_sp_fixed(
         if len(cluster_filter) > 0:
             cluster_filter = add_attributes(
                 cluster_filter,
-                pcount=cluster_filter['cluster'].map(counts)
+                pcount=cluster_filter['cluster'].map(clean_counts)
             )
             clustered_parcel_data = pd.concat([clustered_parcel_data, cluster_filter], ignore_index=True)
 
@@ -221,7 +221,7 @@ def dt_exploratory_analysis(fips, data_dir):
     dt_order = ["dt30", "dt50", "dt75", "dt100", "dt150", "dt200"]
     for ax, dt in zip(axes.flatten(), dt_order):
         gdfs[dt].plot(ax=ax, color=colors[dt], edgecolor='black')
-        ax.set_title(dt)
+        ax.set_title(f'{fips}-{dt}: {len(gdfs[dt])} superparcels')
         ax.set_axis_off()
     plt.tight_layout()
     grid_fn = os.path.join(fips_output_dir, f"{fips}_grid.png")
