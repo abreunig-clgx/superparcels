@@ -235,6 +235,11 @@ def sp1(ctx, bd, fips, cp, key, dt, mp, ss, at, qa, pb):
         logger.info(f'Collection {os.path.basename(fi)} for FIPS {current_fips}...')
         output_dir = os.path.join(bd, 'outputs', current_fips)
         os.makedirs(output_dir, exist_ok=True)
+
+        # add to config
+        config['OUTPUT_DIR'] = output_dir
+        with open(ctx.obj["CONFIG"], "w") as config_file:
+            json.dump(config, config_file, indent=4)
         
         # Build sp_args for each distance threshold for the current file
         for dist_thresh in dt:
@@ -311,20 +316,19 @@ def sp1(ctx, bd, fips, cp, key, dt, mp, ss, at, qa, pb):
     logger.info("BUILD COMPLETE.")
     click.echo("_________________________________________________________")
 
-@build.command(
+@click.command(
     help="Build Exploratory Analysis for Distance Thresholds. IN-DEVELOPMENT"
 )
-@click.option('-fips', type=str, default=None,
-                help="FIPS code(s) to build SuperParcel for. If not provided, will build for all FIPS codes found in config.json")
-@click.option('-dd', '--data-dir', type=click.Path(), default=None,
-                help="Root directory where data is located.")
 @click.pass_context
-def dtepa(ctx, fips, data_dir):
-    from sp_geoprocessing.build import dt_exploratory_analysis
+def dt_analysis(ctx):
+    from sp_geoprocessing.analysis import dt_owner_counts
+    
+    click.echo("-")
+    click.echo("-")
+    logger.info("BUILDING Distance Threshold Comparison Analysis")
+    click.echo("-")
+    click.echo("-")
     click.echo("_________________________________________________________")
-    logger.info("BUILDING Distance Threshold Explroatory Analysis")
-    click.echo("-")
-    click.echo("-")
 
     # Attempt to load configuration from file (if provided via ctx)
     if os.path.exists(ctx.obj["CONFIG"]):
@@ -333,7 +337,49 @@ def dtepa(ctx, fips, data_dir):
     else:
         logger.error('Cannot find config.json!!!')
 
+    
+    shp_dir = config.get("OUTPUT_DIR")
+    fips_list = config.get("FIPS_LIST")
 
-    dt_exploratory_analysis(fips=fips, data_dir=data_dir)
+    all_owner_counts = pd.DataFrame()
+    for fips in fips_list:
+        logger.info(f'Processing FIPS: {fips}...')
+        try:
+            all_dts = glob.glob(os.path.join(shp_dir, fips, '*.shp'), recursive=True)
+        except:
+            raise ValueError('No shapefiles found in the specified directory')
+            
+
+        # extract distance thresholds from filenames
+        dt_names = []
+        for dt in all_dts:
+            dt_name = os.path.basename(dt).split('-')[-1].split('.')[0].split('dt')[-1]
+            # sort by distance threshold
+            dt_names.append(int(dt_name))
+        dt_names.sort()
+
+
+        
+        # run analysis
+        owner_counts = dt_owner_counts(
+            data_dir=shp_dir, 
+            fips=fips,
+            dt_values=dt_names, 
+            group_field='dt',
+            agg_field='owner')
+        all_owner_counts = pd.concat([all_owner_counts, owner_counts], axis=0)
+
+    logger.info('Writing files...')
+    out_path = os.path.join(shp_dir, 'dt_analysis.csv')
+    all_owner_counts.to_csv(out_path)
+
+    click.echo('-')
+    click.echo('-')
+    click.echo('DT ANALYSIS COMPLETE.')
+    click.echo('-')
+    click.echo('-')
+    click.echo("_________________________________________________________")
+
+
 
          
