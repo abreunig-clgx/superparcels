@@ -10,20 +10,10 @@ from shapely import wkt
 import logging
 from gcslib_cp import gcslib_cp
 from sp_geoprocessing.build import build_sp_fixed
-from sp_geoprocessing.tools import to_int_list
+from helper import parse_to_int_list, parse_to_str_list
 
 # Configure the root logger
 logger = logging.getLogger(__name__)
-
-# Callback function to parse input into a list
-def parse_list(ctx, param, value):
-    # Remove the leading and trailing square brackets and split by commas
-    if value:
-       
-        result = ast.literal_eval(value)
-        return [str(item) for item in result]
-    else:
-        return []
 
 @click.group(help='Setup Processes build config files, setup build directories, and prep input data for Build process.')
 @click.pass_context
@@ -138,15 +128,15 @@ def build(ctx):
 )
 @click.option('-bd', type=click.Path(), default=None,
               help="Directory where you want the build to occur.")
-@click.option('-fips', default=None,
+@click.option('-fips', default=None, multiple=True, type=str,
               help="FIPS code(s) to build SuperParcel for. If not provided, will build for all FIPS codes found in config.json",
-              callback=parse_list)
+              callback=parse_to_str_list)
 @click.option('-cp', type=click.Path(), default=None,
               help="Path to County Candidate Parcel shapefile. If not provided, will use config.json")
 @click.option('-key', type=str, default='OWNER',
               help="Field to use for clustering. Default is 'OWNER'.")
-@click.option('-dt', default=['200'],
-              help="Distance threshold list for clustering. Default is 200.", callback=to_int_list)
+@click.option('-dt', default=None, multiple=True,
+              help="Distance threshold list for clustering. Default is 200.", callback=parse_to_int_list)
 @click.option('-mp', type=int, default=None,
               help="Batch size for multiprocessing. Default is None.")
 @click.option('-ss', type=int, default=3,
@@ -368,6 +358,7 @@ def dt_analysis(ctx):
             group_field='dt',
             agg_field='owner')
         all_owner_counts = pd.concat([all_owner_counts, owner_counts], axis=0)
+        print(all_owner_counts)
 
     logger.info('Writing files...')
     out_path = os.path.join(shp_dir, 'dt_analysis.csv')

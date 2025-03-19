@@ -12,7 +12,7 @@ import warnings
 warnings.filterwarnings('ignore')
 import logging
 from sp_geoprocessing.tools import *
-from sp_geoprocessing.tools import setup_logger
+from helper import setup_logger
 
 logger = setup_logger()
 def build_sp_fixed(

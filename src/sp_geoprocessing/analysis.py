@@ -23,7 +23,7 @@ def dt_owner_counts(data_dir, fips, dt_values, group_field, agg_field):
         agg_field=agg_field
     )
     owner_counts.index = [fips]
-
+    
     return owner_counts
         
 
