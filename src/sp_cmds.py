@@ -225,17 +225,11 @@ def sp1(ctx, bd, fips, cp, key, dt, mp, ss, at, qa, pb):
         logger.info(f'Collection {os.path.basename(fi)} for FIPS {current_fips}...')
         output_dir = os.path.join(bd, 'outputs', current_fips)
         os.makedirs(output_dir, exist_ok=True)
-
-        # add to config
-        config['OUTPUT_DIR'] = output_dir
-        with open(ctx.obj["CONFIG"], "w") as config_file:
-            json.dump(config, config_file, indent=4)
         
         # Build sp_args for each distance threshold for the current file
         for dist_thresh in dt:
             sp_args.append((fi, current_fips, key, dist_thresh, ss, at, qa, output_dir))
 
-    
     if not mp:
         # loop through each distance threshold
         for args in sp_args:
@@ -311,7 +305,7 @@ def sp1(ctx, bd, fips, cp, key, dt, mp, ss, at, qa, pb):
 )
 @click.pass_context
 def dt_analysis(ctx):
-    from sp_geoprocessing.analysis import dt_owner_counts
+    from sp_geoprocessing.analysis import dt_owner_counts, dt_overlap
     
     click.echo("-")
     click.echo("-")
@@ -332,6 +326,7 @@ def dt_analysis(ctx):
     fips_list = config.get("FIPS_LIST")
 
     all_owner_counts = pd.DataFrame()
+    all_dt_overlaps = pd.DataFrame()
     for fips in fips_list:
         logger.info(f'Processing FIPS: {fips}...')
         try:
@@ -350,7 +345,8 @@ def dt_analysis(ctx):
 
 
         
-        # run analysis
+        # run owner counts for each distance threshold
+        logger.info('Running owner counts...')
         owner_counts = dt_owner_counts(
             data_dir=shp_dir, 
             fips=fips,
@@ -358,11 +354,22 @@ def dt_analysis(ctx):
             group_field='dt',
             agg_field='owner')
         all_owner_counts = pd.concat([all_owner_counts, owner_counts], axis=0)
-        print(all_owner_counts)
+        
+        # run overlap analysis for each distance threshold
+        dt_overlaps = dt_overlap(
+            data_dir=shp_dir,
+            fips=fips,
+            dt_values=dt_names,
+            sp_id_field='sp_id',
+            owner_field='owner'
+        )
+        all_dt_overlaps = pd.concat([all_dt_overlaps, dt_overlaps], axis=0)
 
     logger.info('Writing files...')
-    out_path = os.path.join(shp_dir, 'dt_analysis.csv')
-    all_owner_counts.to_csv(out_path)
+    owner_count_out_path = os.path.join(shp_dir, 'owner_count_analysis.csv')
+    dt_overlap_out_path = os.path.join(shp_dir, 'dt_overlap_analysis.csv')
+    all_owner_counts.to_csv(owner_count_out_path)
+    all_dt_overlaps.to_csv(dt_overlap_out_path)
 
     click.echo('-')
     click.echo('-')

@@ -4,13 +4,15 @@ from scipy.ndimage import uniform_filter1d
 import numpy as np
 from math import ceil
 from sklearn.cluster import DBSCAN, KMeans
-from shapely.geometry import MultiPolygon, MultiPoint
+from shapely.geometry import MultiPolygon, MultiPoint, Polygon
 from scipy.spatial import cKDTree
 from scipy.spatial.distance import cdist
 import ast
 from typing import List
 import logging
 import multiprocessing
+
+logger = logging.getLogger(__name__)
 
 """ Functions for KMeans clustering """
 def build_place_regions(df, max_parcels_per_cluster):
@@ -270,8 +272,12 @@ def build_superparcels(df, buffer, dissolve_by='cluster_ID', area_threshold=None
     Returns a GeoDataFrame with super-parcels.
     """
     sp = df.dissolve(by=dissolve_by).reset_index()
-    sp['geometry'] = sp['geometry'].buffer(buffer)
-    sp['geometry'] = sp['geometry'].buffer(-buffer)
+    logger.info('Calculating mitre limit...')
+    sp['mitre'] = sp['geometry'].apply(compute_mitre_limit)
+
+    logger.info('Applying buffer...')
+    sp['geometry'] = sp.apply(lambda x: x.geometry.buffer(buffer, join_style=2, mitre_limit=x['mitre']), axis=1)
+    sp['geometry'] = sp.apply(lambda x: x.geometry.buffer(-buffer, join_style=2, mitre_limit=x['mitre']), axis=1)
     
     if area_threshold:
         pass
@@ -307,50 +313,6 @@ def num_2_short_form(number):
     else:
         return str(number)
 
-def to_int_list(ctx, param, value):
-    """
-    Convert an input value to a list of integers.
-
-    This callback function parses a string input into a list of integers by safely evaluating the string using 
-    ast.literal_eval.
-
-    Parameters:
-        ctx: Click context (unused).
-        param: Click parameter (unused).
-        value (str): The input string to be converted.
-
-    Returns:
-        list: A list of integers parsed from the input value.
-    """
-    if value:
-        result = ast.literal_eval(value)
-        return [int(item) for item in result]
-    else:
-        return []
-    
-
-def setup_logger():
-    """
-    Set up and return a configured logger.
-
-    This function creates a logger using Python's logging module, sets its level to INFO, defines a formatter that 
-    includes the timestamp, process name, log level, and message, and attaches a StreamHandler to output logs to 
-    the console.
-
-    Returns:
-        logging.Logger: A configured logger instance.
-    """
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO) # debug hard set for running within pytest debugger
-    
-    formatter = logging.Formatter('%(asctime)s - %(processName)s - %(levelname)s - %(message)s')
-    
-    handler = logging.StreamHandler()
-    handler.setFormatter(formatter)
-    
-    logger.addHandler(handler)
-    
-    return logger
 
 def create_batches(arg_tuples, batch_size):
     """
@@ -391,3 +353,42 @@ def mp_framework(func, arg_tuples, n_jobs=None):
 
     return results
         
+def compute_mitre_limit(polygon):
+    """Compute the minimum mitre limit needed to avoid truncation."""
+    if isinstance(polygon, Polygon):
+        coords = np.array(polygon.exterior.coords)  # Get polygon coordinates
+    else: # Handle MultiPolygon
+        coords = [list(p.exterior.coords) for p in polygon.geoms]
+        # Flatten list of coordinates
+        coords = [item for sublist in coords for item in sublist]
+        
+    n = len(coords) - 1  # Ignore duplicate last point
+    mitre_ratios = []
+
+    for i in range(n):
+        # Get three consecutive points (previous, current, next)
+        p1, p2, p3 = coords[i - 1], coords[i], coords[(i + 1) % n]
+
+        # Compute vectors
+        v1, v2 = np.array(p1) - np.array(p2), np.array(p3) - np.array(p2)
+
+        # Compute dot product and norms
+        dot_product = np.dot(v1, v2)
+        norm_v1, norm_v2 = np.linalg.norm(v1), np.linalg.norm(v2)
+        norm_product = norm_v1 * norm_v2
+
+        # Skip if vectors are degenerate (i.e., points are the same)
+        if norm_product == 0:
+            continue
+
+        # Compute angle θ between vectors
+        cos_theta = np.clip(dot_product / norm_product, -1, 1)  # Avoid precision errors
+        theta = np.arccos(cos_theta)  # Angle in radians
+
+        # Compute mitre ratio
+        if theta > 0:  # Avoid division by zero
+            mitre_ratio = 1 / np.sin(theta / 2)
+            mitre_ratios.append(mitre_ratio)
+
+    # Return max mitre ratio as the required mitre limit
+    return max(mitre_ratios) if mitre_ratios else 2  # Default to 2
