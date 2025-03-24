@@ -24,6 +24,21 @@ def compute_distance_matrix(polygons):
     
     return distance_matrix
 
+def build_multistep_owner_clusters(df, min_samples, eps):
+    polygons = df.geometry.to_list()
+
+    distance_matrix = compute_distance_matrix(polygons)
+
+    if np.all(distance_matrix == 0): # if all adjacent parcels (i.e. zero-distances), then set distance to 1
+        eps = 1
+
+    if distance_matrix.shape[0] < 3: # only two parcels
+        ##print('Only two parcels in region. No clustering performed.')
+        dbscan = np.array([]) # no clustering
+        return dbscan
+    else:
+        return build_dbscan_clusters(distance_matrix, min_samples, eps)
+
 def build_owner_clusters(df, min_samples, eps):
     """
     Builds clusters for a same-owner parcels within a region.
