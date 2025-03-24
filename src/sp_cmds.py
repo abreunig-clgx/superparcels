@@ -9,7 +9,7 @@ import json
 from shapely import wkt
 import logging
 from gcslib_cp import gcslib_cp
-from sp_geoprocessing.build import build_sp_fixed
+from build import build_sp_fixed
 from helper import parse_to_int_list, parse_to_str_list
 
 # Configure the root logger
@@ -335,6 +335,7 @@ def dt_analysis(ctx):
             raise ValueError('No shapefiles found in the specified directory')
             
 
+
         # extract distance thresholds from filenames
         dt_names = []
         for dt in all_dts:
@@ -344,15 +345,14 @@ def dt_analysis(ctx):
         dt_names.sort()
 
 
-        
         # run owner counts for each distance threshold
         logger.info('Running owner counts...')
         owner_counts = dt_owner_counts(
             data_dir=shp_dir, 
             fips=fips,
             dt_values=dt_names, 
-            group_field='dt',
-            agg_field='owner')
+            group_field='owner'
+        )
         all_owner_counts = pd.concat([all_owner_counts, owner_counts], axis=0)
         
         # run overlap analysis for each distance threshold

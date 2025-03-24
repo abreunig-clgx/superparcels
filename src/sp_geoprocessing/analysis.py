@@ -12,22 +12,22 @@ def dt_overlap(data_dir, fips, dt_values, sp_id_field, owner_field):
     all_dt_dfs = pd.DataFrame()
     for dt_value in dt_values:
         logger.info(f'Processing {dt_value} for {fips}')
-        shp = find_shapefile(os.path.join(data_dir, fips), f'*{dt_value}*.shp')
-        gdf = gpd.read_file(shp)
+        shp = find_shapefile(os.path.join(data_dir, fips), f'*dt{dt_value}*.shp')
+        gdf = gpd.read_file(shp).reset_index()
         
         sjoin = gpd.sjoin(gdf, gdf, how='left', predicate='overlaps')
         mismatch = sjoin[sjoin[owner_field+'_left'] != sjoin[owner_field+'_right']]
-        mismatch = mismatch[mismatch['owner_right'].notnull()][[sp_id_field+'_left', owner_field+'_left', owner_field+'_right', 'geometry']]
+        mismatch = mismatch[mismatch['owner_right'].notnull()]
+        mismatch = mismatch[['index_left', sp_id_field+'_left', owner_field+'_left', 'index_right', owner_field+'_right', 'geometry']]
 
-        sjoin_right = pd.merge(mismatch, gdf[[owner_field, 'geometry']], left_on=owner_field+'_right', right_on=owner_field, how='inner')
+        sjoin_right = pd.merge(mismatch, gdf[['index', owner_field, 'geometry']], left_on='index_right', right_on='index', how='inner')
         
         sjoin_right['diff_area'] = sjoin_right.apply(
             lambda x: x['geometry_x'].intersection(x['geometry_y']).area if x['geometry_x'].is_valid and x['geometry_y'].is_valid else np.nan, axis=1)
 
         overlaps = sjoin_right[sjoin_right['diff_area'].notnull()]
         overlaps = sjoin_right[sjoin_right['diff_area'] > 1]
-
-        groupby_counts = overlaps.groupby(owner_field+'_left')[owner_field+'_right'].nunique()
+        groupby_counts = overlaps.groupby('index_left')['index_right'].nunique()
 
         data_dict = {
             f'{dt_value}_overlaps': groupby_counts.sum(),
@@ -44,22 +44,27 @@ def dt_overlap(data_dir, fips, dt_values, sp_id_field, owner_field):
     return all_dt_dfs
 
 # Define the main processing function
-def dt_owner_counts(data_dir, fips, dt_values, group_field, agg_field):
-    all_gdfs = gpd.GeoDataFrame()
-    for dt_value in dt_values:
-        shp = find_shapefile(os.path.join(data_dir, fips), f'*{dt_value}*.shp')
-        gdf = gpd.read_file(shp)
-        gdf = add_field(gdf, group_field, dt_value)
-        all_gdfs = pd.concat([all_gdfs, gdf], ignore_index=True)
+def dt_owner_counts(data_dir, fips, dt_values, group_field):
+    all_owner_counts = pd.DataFrame()
 
-    owner_counts = create_owner_counts(
-        all_gdfs, 
-        group_field=group_field, 
-        agg_field=agg_field
-    )
-    owner_counts.index = [fips]
-    
-    return owner_counts
+    for dt_value in dt_values:
+        shp = find_shapefile(os.path.join(data_dir, fips), f'*dt{dt_value}*.shp')
+       
+        gdf = gpd.read_file(shp)
+
+        owner_counts = get_owner_counts(
+            gdf, 
+            group_field=group_field
+        )
+        data = {
+            f'{dt_value}': owner_counts
+        }
+        df = pd.DataFrame(data, index=[0])
+        df.index = [fips]
+     
+        all_owner_counts = pd.concat([all_owner_counts, df], axis=1)
+    return all_owner_counts
+        
         
 def find_shapefile(dir, pattern):
     try:
@@ -68,9 +73,8 @@ def find_shapefile(dir, pattern):
         raise ValueError('No shapefiles found in {}'.format(os.path.join(dir, pattern)))
     return shapefile
 
-def create_owner_counts(df, group_field, agg_field):
-    owner_counts = df.groupby(group_field)[agg_field].nunique().reset_index().set_index(group_field).T
-    owner_counts.columns.name = None
+def get_owner_counts(df, group_field):
+    owner_counts = df.groupby(group_field).nunique().shape[0]
     return owner_counts
 
 def add_field(df, field, value):
