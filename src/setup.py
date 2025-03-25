@@ -9,6 +9,8 @@ setup(
         "click",
         "google-cloud",
         "google-cloud-storage",
+        "google-cloud-bigquery",
+        "pyarrow",
     ],
     entry_points={
         "console_scripts": [

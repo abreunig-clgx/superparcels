@@ -1,16 +1,10 @@
 
-import os
-import sys
-import glob
 import pandas as pd
 import geopandas as gpd
-from tqdm import tqdm
-import numpy as np
 import cProfile
-# ignore warnings
 import warnings
 warnings.filterwarnings('ignore')
-import logging
+
 from sp_geoprocessing.cluster import build_owner_clusters
 from sp_geoprocessing.superparcels import build_superparcels
 from sp_geoprocessing.utils import (
