@@ -11,6 +11,7 @@ setup(
         "google-cloud-storage",
         "google-cloud-bigquery",
         "pyarrow",
+        "db-dtypes"
     ],
     entry_points={
         "console_scripts": [
