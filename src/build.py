@@ -115,7 +115,8 @@ def build_sp_fixed(
 
     # super parcel ID eg. owner + cluster ID + ID of each unique super parcel
     super_parcels['sp_id'] = super_parcels['cluster_ID'] + "_" + super_parcels.groupby('cluster_ID').cumcount().astype(str) 
-    super_parcels = super_parcels[['sp_id', key_field, 'pcount', 'geometry']]
+    super_parcels['fips'] = fips
+    super_parcels = super_parcels[['fips', 'sp_id', key_field, 'pcount', 'geometry']]
 
     logger.info(f'Finished building super parcels for {fips} and dt {distance_threshold}...')
     return super_parcels

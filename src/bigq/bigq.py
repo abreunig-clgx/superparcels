@@ -106,6 +106,54 @@ class BigQ:
             self.logger.error(f"Query failed: {e}")
             raise
 
+    def upload_gdf(self, gdf, table_id: str, write_disposition: str = "WRITE_TRUNCATE", autodetect: bool = True):
+        """
+        Uploads a GeoDataFrame to BigQuery.
+
+        Parameters
+        ----------
+        gdf : geopandas.GeoDataFrame
+            The GeoDataFrame to upload. Its 'geometry' column will be converted to WKT strings if not already.
+        table_id : str
+            The destination BigQuery table ID in the format 'project.dataset.table'.
+        write_disposition : str, optional
+            The write disposition (default is "WRITE_TRUNCATE" to overwrite the table).
+        autodetect : bool, optional
+            Whether to autodetect the table schema (default is True).
+
+        Raises
+        ------
+        RuntimeError
+            If the BigQuery client is not authenticated.
+        Exception
+            If the upload fails.
+        """
+        if not self.authenticated or self.client is None:
+            raise RuntimeError("BigQuery client is not authenticated. Please authenticate first.")
+
+        try:
+            self.logger.info("Preparing GeoDataFrame for upload...")
+
+            # Convert geometry column to WKT if it's not already a string.
+            if "geometry" in gdf.columns:
+                gdf = gdf.copy()  # Avoid modifying the original
+                gdf["geometry"] = gdf["geometry"].apply(
+                    lambda geom: geom.wkt if not isinstance(geom, str) else geom
+                )
+
+            self.logger.info("Uploading GeoDataFrame to BigQuery...")
+            job_config = bigquery.LoadJobConfig(
+                write_disposition=write_disposition,
+                autodetect=autodetect
+            )
+            job = self.client.load_table_from_dataframe(gdf, table_id, job_config=job_config)
+            job.result()  # Wait for the load job to complete
+            self.logger.info(f"Uploaded {job.output_rows} rows to {table_id}")
+        except Exception as e:
+            self.logger.error(f"Failed to upload GeoDataFrame to BigQuery: {e}")
+            raise
+
+
     class Auth:
         def __init__(self, parent: 'BigQ'):
             """
