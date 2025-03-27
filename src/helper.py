@@ -1,8 +1,12 @@
 import os
+import ast
 import geopandas as gpd
 from typing import List, Tuple, Union
 import pandas as pd
 from shapely import wkt
+from platformdirs import user_config_dir
+from pathlib import Path
+import json
 import logging
 import click
 import logging
@@ -55,7 +59,63 @@ def parse_to_int_list(ctx, param, value):
         result.append(int(item))
 
     return result
+
+import click
+
+def parse_key_value(ctx, param, value):
+    """Parses key-value pairs into a dictionary.
     
+    Examples:
+      "key=value" -> {'key': 'value'}
+      "key=[item1,item2]" -> {'key': ['item1', 'item2']}
+      "key=[item1,item2],other=path" -> {'key': ['item1', 'item2'], 'other': 'path'}
+    """
+    if not value:
+        return None
+
+    # If multiple values are provided (as a tuple or list), join them into one string.
+    if isinstance(value, (list, tuple)):
+        value = ','.join(value)
+
+    def split_outside_brackets(s):
+        """Split string by commas that are not within square brackets."""
+        parts = []
+        current = []
+        depth = 0
+        for char in s:
+            if char == '[':
+                depth += 1
+            elif char == ']':
+                depth -= 1
+            # If we hit a comma and we're not inside a bracketed section, split here.
+            if char == ',' and depth == 0:
+                parts.append(''.join(current))
+                current = []
+            else:
+                current.append(char)
+        if current:
+            parts.append(''.join(current))
+        return parts
+
+    result = {}
+    # Split the input string into key-value pair strings.
+    pairs = split_outside_brackets(value)
+    
+    for pair in pairs:
+        if '=' not in pair:
+            raise click.BadParameter(f"Invalid format '{pair}'. Use key=value")
+        key, val = pair.split('=', 1)
+        key = key.strip()
+        val = val.strip()
+        # If the value is enclosed in brackets, interpret it as a list.
+        if val.startswith('[') and val.endswith(']'):
+            inner = val[1:-1].strip()
+            items = [item.strip() for item in inner.split(',')] if inner else []
+            result[key] = items
+        else:
+            result[key] = val
+    return result
+
 def setup_logger():
     """
     Set up and return a configured logger.
@@ -274,3 +334,23 @@ def get_git_commit_hash(short: bool = True) -> str:
         return result.stdout.strip()
     except subprocess.CalledProcessError:
         return "unknown"
+
+
+def get_config_path() -> Path:
+    APP_NAME = "superparcels"
+    CONFIG_FILENAME = "config.json"
+    config_dir = Path(user_config_dir(APP_NAME))
+    config_dir.mkdir(parents=True, exist_ok=True)
+    return config_dir / CONFIG_FILENAME
+
+def load_config(config_path: str = None) -> dict:
+    if config_path.exists():
+        with open(config_path, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_config(config_path: str = None, config: dict = None) -> None:
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=2)
+
+

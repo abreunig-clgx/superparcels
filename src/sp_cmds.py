@@ -7,18 +7,53 @@ import geopandas as gpd
 import json
 import logging
 from datetime import datetime, timezone
-from build import build_sp_fixed
-from helper import parse_to_int_list, parse_to_str_list
+from helper import get_config_path, load_config, save_config, parse_to_int_list, parse_to_str_list, parse_key_value
 
 # Configure the root logger
 logger = logging.getLogger(__name__)
 
 @click.command(help="Builds config json file for SuperParcel build.")
-@click.option('-js', '--json-key', type=click.Path(exists=False), help="Path to GCP JSON key file.", required=True)
-@click.option('-fips', '--county-fips', multiple=True, type=str, default=None, help="County FIPS to build. Comma-seperated. No Spaces.", required=True, callback=parse_to_str_list)
-@click.option('-bd', '--build-dir', type=click.Path(exists=False), help="Local directory for build.", required=True)
+@click.option('-js', '--json-key', type=click.Path(exists=False), help="Path to GCP JSON key file.")
+@click.option('-fips', '--county-fips', multiple=True, type=str, default=None, help="County FIPS to build. Comma-seperated. No Spaces.", callback=parse_to_str_list)
+@click.option('-bd', '--build-dir', type=click.Path(exists=False), help="Local directory for build.")
+@click.option('-see', is_flag=True, default=False, help="See config.json file.")
+@click.option('-update', multiple=True, default=None, help="Update config.json file. Key Value pairs seperated by '='. No Spaces.", callback=parse_key_value)
 @click.pass_context
-def config(ctx, build_dir, json_key, county_fips):
+def config(ctx, build_dir, json_key, county_fips, see, update):
+    if see:
+        try:
+            config = load_config(ctx.obj["CONFIG"])
+            click.echo(ctx.obj["CONFIG"])
+            click.echo(config)
+            sys.exit()
+        except FileNotFoundError:
+            logger.error(f"Configuration file not found at {ctx.obj['CONFIG']}.")
+            sys.exit()
+
+    if update:
+        sys.exit(update)
+        try:
+            config = load_config(ctx.obj["CONFIG"])
+        except FileNotFoundError:
+            logger.error(f"Configuration file not found at {ctx.obj['CONFIG']}.")
+            sys.exit()
+
+        for key, value in update.items():
+            if key in config:
+                config[key] = value
+            else:
+                logger.error(f"Key {key} not found in configuration file.")
+                sys.exit()
+
+        try:
+            save_config(ctx.obj["CONFIG"], config)
+            logger.info(f"Configuration file updated at {ctx.obj['CONFIG']}.")
+            sys.exit()
+        except Exception as e:
+            logger.error(f"Failed to update configuration file: {e}")
+            sys.exit()
+
+
     click.echo("_________________________________________________________")
     logger.info("SETTING UP SuperParcel Build")
     click.echo("-")
@@ -46,9 +81,11 @@ def config(ctx, build_dir, json_key, county_fips):
     config["FIPS_LIST"] = county_fips
     
     try:
+        
         with open(ctx.obj["CONFIG"], "w") as config_file:
             json.dump(config, config_file, indent=4)
-        logger.info(f"Configuration file created!")
+        logger.info(f"Configuration file created at {ctx.obj['CONFIG']}.")
+        
     except Exception as e:
         raise logger.error(f"Failed to write config file: {e}")
     

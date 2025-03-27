@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "superparcels"
+version = "0.1.0"
+requires-python = ">=3.11"
+description = "CLI tool SuperParcel Library"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "Austin Breunig", email = "abreunig@corelogic.com"}]
+dependencies = [
+    "tqdm",
+    "click",
+    "google-cloud",
+    "google-cloud-storage",
+    "google-cloud-bigquery",
+    "pyarrow",
+    "db-dtypes",
+    "platformdirs"
+]
+
+[project.scripts]
+sps = "cli:cli"
+
+[tool.setuptools]
+package-dir = {"" = "src"} 
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["sp_geoprocessing", "bigq"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
