@@ -4,9 +4,10 @@ import geopandas as gpd
 import cProfile
 import warnings
 warnings.filterwarnings('ignore')
+import logging
 
 from sp_geoprocessing.cluster import build_owner_clusters
-from sp_geoprocessing.superparcels import build_superparcels
+from sp_geoprocessing.superparcels import build_superparcels, hash_puids
 from sp_geoprocessing.utils import (
     add_attributes,
     remove_from_df,
@@ -15,7 +16,7 @@ from sp_geoprocessing.utils import (
 )
 from helper import setup_logger
 
-logger = setup_logger()
+logger = logging.getLogger(__name__)
 def build_sp_fixed(
     parcels, 
     fips,
@@ -44,7 +45,8 @@ def build_sp_fixed(
                 logger.info(message)
         def flush(self):
             pass
-    parcels = gpd.read_file(parcels)
+    parcels = gpd.read_file(parcels).reset_index(drop=True)
+    parcels['puid'] = parcels.index
     # setup cProfiler
     if qa:
         # enable cProfiler
@@ -62,7 +64,7 @@ def build_sp_fixed(
     for owner in unique_owners:
         owner_parcels = parcels[parcels[key_field] == owner] # ownder specific parcels
         
-        # REFACTOR: CLUSTERING
+        # CLUSTERING
         clusters = build_owner_clusters(
                 owner_parcels,
                 min_samples=sample_size,
@@ -74,6 +76,7 @@ def build_sp_fixed(
 
         owner_parcels['cluster'] = clusters # clustert ID
         owner_parcels['cluster_area'] = owner_parcels['geometry'].area
+
         counts = owner_parcels['cluster'].value_counts() # pd.series of cluster counts
         
         outlier_ids, clean_counts = segregate_outliers(counts, -1)
@@ -84,12 +87,18 @@ def build_sp_fixed(
             field='cluster'
         )
         
-        # REFACTOR: ADD ATTRIBUTES??
+    
         if len(cluster_filter) > 0:
+            # calcualte total area
+            total_area = owner_parcels['cluster_area'].sum()
+
+            # add attributes
             cluster_filter = add_attributes(
                 cluster_filter,
-                pcount=cluster_filter['cluster'].map(clean_counts)
+                pcount=cluster_filter['cluster'].map(clean_counts),
+                p_area=total_area
             )
+            cluster_filter = cluster_filter[[key_field, 'puid', 'cluster', 'pcount', 'p_area', 'geometry']]
             clustered_parcel_data = pd.concat([clustered_parcel_data, cluster_filter], ignore_index=True)
 
     if len(clustered_parcel_data) == 0:
@@ -106,17 +115,31 @@ def build_sp_fixed(
         # log message not implemented yet
         # run filter_area()
         pass
-
+    
+    # CLUSTER IDS PUIDS (eg. cluster0: [p1, p2, p3], cluster1: [p4, p5])
+    cluster_puid_gb = clustered_parcel_data.groupby('cluster_ID')['puid'].apply(list).reset_index()
+    
     super_parcels = build_superparcels(
         df=clustered_parcel_data,
         buffer=distance_threshold,
         dissolve_by='cluster_ID',
     )
 
-    # super parcel ID eg. owner + cluster ID + ID of each unique super parcel
-    super_parcels['sp_id'] = super_parcels['cluster_ID'] + "_" + super_parcels.groupby('cluster_ID').cumcount().astype(str) 
-    super_parcels['fips'] = fips
-    super_parcels = super_parcels[['fips', 'sp_id', key_field, 'pcount', 'geometry']]
+    # CREATE HASED UNIQUE SP_ID
+    super_parcels['sp_id'] = cluster_puid_gb['puid'].apply(hash_puids)
+
+    # ADD OTHER ATTRIBUTES
+    super_parcels = add_attributes(
+        fips=fips,
+        sp_area=super_parcels['geometry'].area,
+        area_ratio=super_parcels['geometry'].area / super_parcels['p_area'],
+    )
+
+    # FINAL TABLE
+    super_parcels = (
+        super_parcels[['fips', 'sp_id', key_field, 'pcount', 'area_ratio', 'p_area', 'sp_area', 'geometry']]
+        .to_crs(epsg=4326)
+    )
 
     logger.info(f'Finished building super parcels for {fips} and dt {distance_threshold}...')
     return super_parcels

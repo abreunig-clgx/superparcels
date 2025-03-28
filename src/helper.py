@@ -11,7 +11,7 @@ import logging
 import click
 import logging
 
-logger = logging.getLogger()
+logger = logging.getLogger('sp_cmds')
 
 
 

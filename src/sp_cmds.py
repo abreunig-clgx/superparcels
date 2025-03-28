@@ -11,6 +11,8 @@ from helper import get_config_path, load_config, save_config, parse_to_int_list,
 
 # Configure the root logger
 logger = logging.getLogger(__name__)
+logger.handlers.clear()
+
 
 @click.command(help="Builds config json file for SuperParcel build.")
 @click.option('-js', '--json-key', type=click.Path(exists=False), help="Path to GCP JSON key file.")
@@ -31,7 +33,6 @@ def config(ctx, build_dir, json_key, county_fips, see, update):
             sys.exit()
 
     if update:
-        sys.exit(update)
         try:
             config = load_config(ctx.obj["CONFIG"])
         except FileNotFoundError:
@@ -111,7 +112,7 @@ def build(ctx):
 @click.option('-at', '--area-threshold', type=int, default=None,
               help="Minimum area threshold for super parcel creation. Default is None. NOT YET IMPLEMENTED.")
 @click.option('-local', '--local-upload', is_flag=True, default=False,
-              help="Uploads to local directory instead of GCS. Default is False.")
+              help="Saves build to local build directory. Default is False.")
 @click.option('-bq', '--bq-upload', is_flag=True, default=True,
                 help="Uploads to BigQueryTable. Default is True.")
 @click.option('-bd', '--build-dir', type=click.Path(), default=None,
@@ -150,6 +151,9 @@ def sp1(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upl
     timestamp = datetime.now(timezone.utc).replace(second=0, microsecond=0)
     commit_hash = get_git_commit_hash()
 
+    logger.debug(f"Timestamp: {timestamp}")
+    logger.debug(f"Commit Hash: {commit_hash}")
+
     # Use user-provided build directory if available; otherwise, fall back to config.
     bd = build_dir or config.get("BUILD_DIR")
     if not bd:
@@ -160,6 +164,7 @@ def sp1(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upl
 
     try:
         fips = fips or config.get("FIPS_LIST", [])
+        logger.debug(f"FIPS List: {fips}")
     except KeyError:
         raise click.ClickException("FIPS code(s) must be provided as an argument (-fips) or in the config file.")    
             
@@ -167,18 +172,21 @@ def sp1(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upl
     bq_output_path = f"{config.get('GCP_PROJECT')}.{config.get('GCP_OUTPUT_DATASET')}"
     json_key = config.get("GCP_JSON")
 
+    logger.debug(f"BigQuery Input Path: {bq_input_path}")
+    logger.debug(f"BigQuery Output Path: {bq_output_path}")
+    logger.debug(f"JSON Key: {json_key}")
     # Process Place Boundaries if provided (future implementation)
     if pb:
         logger.info("Running with Place Boundaries (feature not yet implemented).")
         # TODO: Implement processing with place boundaries.
 
-    print(type(fips))
+
     # CANDIDATE SQL QUERY
     query = sql_query(
         path=bq_input_path,
         fips_list=fips
     )
-    logger.info(f"SQL Query: {query}")
+    logger.debug(f"SQL Query: {query}")
     try:
         candidate_gdf = bigquery_to_gdf(
             json_key=json_key,
@@ -188,11 +196,24 @@ def sp1(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upl
         raise logger.error(f"Failed to pull data from BigQuery: {e}")
 
 
-    # get KEY OWNER FIELD
+    # get KEY OWNER & FIPS FIELD
     owner_field = next((col for col in candidate_gdf.columns if 'owner' in col.lower()), None)
     fips_field = next((col for col in candidate_gdf.columns if 'fips' in col.lower()), None)
 
-   
+    logger.debug(f"Candidate GeoDataFrame Columns: {candidate_gdf.columns}")
+    logger.debug(f"Candidate GeoDataFrame: {candidate_gdf.head(2)}")
+    logger.debug(f"Candidate GeoDataFrame CRS: {candidate_gdf.crs}")
+    logger.debug(f"Candidate GeoDataFrame Length: {len(candidate_gdf)}")
+    if owner_field is None:
+        raise logger.error("No owner field found in the candidate GeoDataFrame.")
+    
+    if fips_field is None:
+        raise logger.error("No FIPS field found in the candidate GeoDataFrame.")
+    
+    logger.debug(f"Owner Field: {owner_field}")
+    logger.debug(f"FIPS Field: {fips_field}")
+
+    # list of tuples for each arg combination
     sp_args = build_sp_args(
         candidate_gdf=candidate_gdf,
         fips_field=fips_field,
@@ -203,12 +224,18 @@ def sp1(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upl
         output_dir=bq_output_path
     )
 
+    logger.debug(f"SP Args Example Tuple: {sp_args[0]}")
+
     if len(dist_thres) == 1:
-        batch_size = min(len(fips), 15) # 15 is the max number of jobs that can be run in parallel
+        batch_size = min(len(fips), 10) # 10 is the max number of jobs that can be run in parallel
     else:
-        batch_size = len(dist_thres) # group all distance thresholds together ([fip1-dt1, fip2-dt1, fip3-dt1], [fip1-dt2, fip2-dt2, fip3-dt2], etc.)
+        # group all distance thresholds together ([fip1-dt1, fip2-dt1, fip3-dt1], [fip1-dt2, fip2-dt2, fip3-dt2], etc.)
+        batch_size = len(dist_thres) 
+
+    logger.info(f"Batch Size: {batch_size}")
     batches = list(create_batches(sp_args, batch_size))
 
+    sys.exit()
     for batch in batches:
         logger.info('______________________')
         batch_ids = [args[1] for args in batch]  # Using FIPS from the tuple
@@ -224,14 +251,17 @@ def sp1(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upl
         logger.info(f'Area Threshold: {at_ids}')
         logger.info(f'Output Directories: {batch_output_dirs}')
 
-        results = mp_framework(build_sp_fixed, batch, n_jobs=batch_size) # insert all args minus output directory
+
+        # RUN SUPERPARCEL BUILD
+        logger.info(f'STARTING SUPERPARCEL BUILD')
+        results = mp_framework(build_sp_fixed, batch, n_jobs=batch_size) 
 
         for i, result in enumerate(results):
             if result is None or len(result) == 0:
                 logger.error(f"No results for batch {i}. Skipping...")
                 continue
 
-            # Check if the output directory exists
+            # GATHER BATCH INFO
             output_dir = batch_output_dirs[i]
             _fips = batch_ids[i]
             _dt = dt_ids[i]
@@ -241,28 +271,14 @@ def sp1(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upl
             # add timstamp field to result
             result['timestamp'] = timestamp
             
+            if _at:
+                fn = build_filename(f'spfixed_{commit_hash}', '-', f'dt{_dt}', f'ss{_ss}', f'at{_at}')
+            else:
+                fn = build_filename(f'spfixed_{commit_hash}', '-', f'dt{_dt}', f'ss{_ss}')
 
-            logger.info(f'{result.head(1)}')
-
-        
-        for id, result in enumerate(results):
-            result_output_dir = batch_output_dirs[id]
-            if result is not None and len(result) > 0:
-                _fips = batch_ids[id]
-                _dt = dt_ids[id]
-                _ss = ss_ids[id]    
-                _at = at_ids[id]
-                
-                result['timestamp'] = timestamp
-
-                if _at is not None:
-                    fn = build_filename(f'spfixed_{commit_hash}', '-', f'dt{_dt}', f'ss{_ss}', f'at{_at}')
-                else:
-                    fn = build_filename(f'spfixed_{commit_hash}', '-', f'dt{_dt}', f'ss{_ss}')
-
-
+            if bq_upload: 
                 output_table_name = f'{output_dir}.{fn}'
-                logger.info(f"Output table name for FIPS {_fips}: {output_table_name}")
+                logger.info(f'Uploading to BigQuery for {_fips}: {output_table_name}')
                 
                 gdf_to_bigquery(
                     gdf=result,
@@ -271,8 +287,18 @@ def sp1(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upl
                     write_type='WRITE_APPEND'
                 )
                 logger.info(f'Upload to BigQuery successful.')
-            else:    
-                logger.error(f"No super parcels created for FIPS {_fips}.")
+
+            if local_upload:
+                output_dir = os.path.join(bd, 'outputs', _fips)
+                os.makedirs(output_dir, exist_ok=True)
+
+                output_local_name = os.path.join(output_dir, f'{fn}.parquet')
+
+                logger.info(f'Saving to local directory for {_fips}: {output_local_name}')
+                result.to_parquet(output_local_name, index=False)
+                logger.info(f'Local upload successful: {output_local_name}')
+        else:    
+            logger.error(f"No super parcels created for FIPS {_fips}.")
     
 
     logger.info("BUILD COMPLETE.")

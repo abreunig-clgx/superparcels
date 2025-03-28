@@ -1,5 +1,6 @@
 import numpy as np
 from shapely.geometry import Polygon
+import hashlib
 import logging
 
 logger = logging.getLogger(__name__)
@@ -10,6 +11,10 @@ def build_superparcels(df, buffer, dissolve_by='cluster_ID', area_threshold=None
     Returns a GeoDataFrame with super-parcels.
     """
     sp = df.dissolve(by=dissolve_by).reset_index()
+    #cross-boundary indicator
+    logger.info('Calculating cross-boundary indicator...')
+    sp['cbi'] = sp['geometry'].apply(lambda x: 1 if x.geom_type == 'MultiPolygon' else 0)
+
     logger.info('Calculating mitre limit...')
     sp['mitre'] = sp['geometry'].apply(compute_mitre_limit)
 
@@ -20,7 +25,7 @@ def build_superparcels(df, buffer, dissolve_by='cluster_ID', area_threshold=None
     if area_threshold:
         pass
 
-    return sp.explode(ignore_index=True)
+    return sp
 
 
 def compute_mitre_limit(polygon):
@@ -62,3 +67,10 @@ def compute_mitre_limit(polygon):
 
     # Return max mitre ratio as the required mitre limit
     return max(mitre_ratios) if mitre_ratios else 2  # Default to 2
+
+
+def hash_puids(puid_list):
+    joined = '-'.join(sorted(puid_list))
+    return hashlib.sha256(joined.encode()).hexdigest()[:10]
+
+

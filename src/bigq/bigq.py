@@ -14,17 +14,8 @@ class Logging:
 
     def _get_logger(self) -> logging.Logger:
         """Create or retrieve a logger instance."""
-        logger_name = 'BigQLogger'
-        logger = logging.getLogger(logger_name)
-        if not logger.hasHandlers():
-            logger.setLevel(logging.INFO)
-            formatter = logging.Formatter(
-                '%(asctime)s - %(levelname)s - %(message)s',
-                datefmt='%Y-%m-%d %H:%M:%S'
-            )
-            console_handler = logging.StreamHandler()
-            console_handler.setFormatter(formatter)
-            logger.addHandler(console_handler)
+        logger = logging.getLogger(__name__)
+        logger.handlers.clear()
         return logger
 
     def info(self, msg: str):
