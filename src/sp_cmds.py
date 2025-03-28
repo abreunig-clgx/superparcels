@@ -111,9 +111,9 @@ def build(ctx):
               help="Minimum number of samples for clustering. Default is 3.")
 @click.option('-at', '--area-threshold', type=int, default=None,
               help="Minimum area threshold for super parcel creation. Default is None. NOT YET IMPLEMENTED.")
-@click.option('-local', '--local-upload', is_flag=True, default=False,
+@click.option('-local', '--local-upload', type=click.BOOL, default=False,
               help="Saves build to local build directory. Default is False.")
-@click.option('-bq', '--bq-upload', is_flag=True, default=True,
+@click.option('-bq', '--bq-upload', type=click.BOOL, default=True,
                 help="Uploads to BigQueryTable. Default is True.")
 @click.option('-bd', '--build-dir', type=click.Path(), default=None,
               help="Directory where you want the build to occur. If not provided, will use the build directory from config.json.",
@@ -141,6 +141,7 @@ def sp1(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upl
     click.echo("-")
     click.echo("-")
 
+   
     # Attempt to load configuration from file (if provided via ctx)
     if os.path.exists(ctx.obj["CONFIG"]):
         with open(ctx.obj["CONFIG"], "r") as config_file:
@@ -154,6 +155,7 @@ def sp1(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upl
     logger.debug(f"Timestamp: {timestamp}")
     logger.debug(f"Commit Hash: {commit_hash}")
 
+
     # Use user-provided build directory if available; otherwise, fall back to config.
     bd = build_dir or config.get("BUILD_DIR")
     if not bd:
@@ -164,6 +166,8 @@ def sp1(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upl
 
     try:
         fips = fips or config.get("FIPS_LIST", [])
+        input_dir = os.makedirs(os.path.join(bd, "inputs"), exist_ok=True) or config.get("INPUT_DIR")
+        output_dir = os.makedirs(os.path.join(bd, "outputs"), exist_ok=True) or config.get("OUTPUT_DIR")
         logger.debug(f"FIPS List: {fips}")
     except KeyError:
         raise click.ClickException("FIPS code(s) must be provided as an argument (-fips) or in the config file.")    
@@ -187,23 +191,34 @@ def sp1(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upl
         fips_list=fips
     )
     logger.debug(f"SQL Query: {query}")
+
     try:
         candidate_gdf = bigquery_to_gdf(
             json_key=json_key,
             sql_query=query
         )
+
+        if local_upload: # write input to input_dir
+            input_path = os.path.join(input_dir, 'candidate_input.shp')
+            candidate_gdf.to_file(input_path, driver='ESRI Shapefile')
     except Exception as e:
         raise logger.error(f"Failed to pull data from BigQuery: {e}")
 
 
-    # get KEY OWNER & FIPS FIELD
+    # get KEY OWNER & FIPS PUID FIELD
     owner_field = next((col for col in candidate_gdf.columns if 'owner' in col.lower()), None)
     fips_field = next((col for col in candidate_gdf.columns if 'fips' in col.lower()), None)
+    puid_field = next((col for col in candidate_gdf.columns if 'puid' in col.lower()), None)
+    logger.debug(f"Owner Field: {owner_field}")
+    logger.debug(f"FIPS Field: {fips_field}")
+    logger.debug(f"PUID Field: {puid_field}")
+    logger.debug(f'PUID dtype: {candidate_gdf[puid_field].dtype}')
 
     logger.debug(f"Candidate GeoDataFrame Columns: {candidate_gdf.columns}")
     logger.debug(f"Candidate GeoDataFrame: {candidate_gdf.head(2)}")
     logger.debug(f"Candidate GeoDataFrame CRS: {candidate_gdf.crs}")
     logger.debug(f"Candidate GeoDataFrame Length: {len(candidate_gdf)}")
+    
     if owner_field is None:
         raise logger.error("No owner field found in the candidate GeoDataFrame.")
     
@@ -235,7 +250,6 @@ def sp1(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upl
     logger.info(f"Batch Size: {batch_size}")
     batches = list(create_batches(sp_args, batch_size))
 
-    sys.exit()
     for batch in batches:
         logger.info('______________________')
         batch_ids = [args[1] for args in batch]  # Using FIPS from the tuple
@@ -262,7 +276,7 @@ def sp1(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upl
                 continue
 
             # GATHER BATCH INFO
-            output_dir = batch_output_dirs[i]
+            output_bigq_path = batch_output_dirs[i]
             _fips = batch_ids[i]
             _dt = dt_ids[i]
             _ss = ss_ids[i]
@@ -272,12 +286,12 @@ def sp1(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upl
             result['timestamp'] = timestamp
             
             if _at:
-                fn = build_filename(f'spfixed_{commit_hash}', '-', f'dt{_dt}', f'ss{_ss}', f'at{_at}')
+                fn = build_filename(f'spfixed', '-', f'dt{_dt}', f'ss{_ss}', f'at{_at}')
             else:
-                fn = build_filename(f'spfixed_{commit_hash}', '-', f'dt{_dt}', f'ss{_ss}')
+                fn = build_filename(f'spfixed', '-', f'dt{_dt}', f'ss{_ss}')
 
             if bq_upload: 
-                output_table_name = f'{output_dir}.{fn}'
+                output_table_name = f'{output_bigq_path}.{fn}'
                 logger.info(f'Uploading to BigQuery for {_fips}: {output_table_name}')
                 
                 gdf_to_bigquery(
@@ -289,16 +303,13 @@ def sp1(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upl
                 logger.info(f'Upload to BigQuery successful.')
 
             if local_upload:
-                output_dir = os.path.join(bd, 'outputs', _fips)
-                os.makedirs(output_dir, exist_ok=True)
-
-                output_local_name = os.path.join(output_dir, f'{fn}.parquet')
+                
+                output_local_name = os.path.join(output_dir, f'{fn}.shp')
 
                 logger.info(f'Saving to local directory for {_fips}: {output_local_name}')
-                result.to_parquet(output_local_name, index=False)
+                result.to_file(output_local_name, driver='ESRI Shapefile')
                 logger.info(f'Local upload successful: {output_local_name}')
-        else:    
-            logger.error(f"No super parcels created for FIPS {_fips}.")
+       
     
 
     logger.info("BUILD COMPLETE.")

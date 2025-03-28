@@ -70,7 +70,9 @@ def compute_mitre_limit(polygon):
 
 
 def hash_puids(puid_list):
-    joined = '-'.join(sorted(puid_list))
+    # puid integers are sorted integers
+    puid_list = sorted(puid_list)
+    joined = '-'.join([str(puid) for puid in puid_list])
     return hashlib.sha256(joined.encode()).hexdigest()[:10]
 
 

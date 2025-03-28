@@ -7,7 +7,7 @@ from shapely import wkt
 from platformdirs import user_config_dir
 from pathlib import Path
 import json
-import logging
+import subprocess
 import click
 import logging
 
@@ -187,7 +187,7 @@ def bigquery_to_gdf(
         return
 
     result_df['geometry'] = result_df['geometry'].apply(wkt.loads)
-    gdf = gpd.GeoDataFrame(result_df, geometry='geometry')
+    gdf = gpd.GeoDataFrame(result_df, geometry='geometry', crs='EPSG:4326')
 
     return gdf
 
@@ -325,14 +325,16 @@ def build_sp_args(
 
     return sp_args
 
-import subprocess
+
 
 def get_git_commit_hash(short: bool = True) -> str:
     try:
         cmd = ["git", "rev-parse", "--short" if short else "HEAD"]
+        print(os.getcwd())
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, text=True)
         return result.stdout.strip()
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Error getting git commit hash: {e}")
         return "unknown"
 
 

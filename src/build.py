@@ -45,7 +45,7 @@ def build_sp_fixed(
                 logger.info(message)
         def flush(self):
             pass
-    parcels = gpd.read_file(parcels).reset_index(drop=True)
+    parcels = parcels.reset_index(drop=True)
     parcels['puid'] = parcels.index
     # setup cProfiler
     if qa:
@@ -130,14 +130,15 @@ def build_sp_fixed(
 
     # ADD OTHER ATTRIBUTES
     super_parcels = add_attributes(
+        super_parcels,
         fips=fips,
         sp_area=super_parcels['geometry'].area,
-        area_ratio=super_parcels['geometry'].area / super_parcels['p_area'],
+        area_ratio=super_parcels['p_area'] / super_parcels['geometry'].area,
     )
 
     # FINAL TABLE
     super_parcels = (
-        super_parcels[['fips', 'sp_id', key_field, 'pcount', 'area_ratio', 'p_area', 'sp_area', 'geometry']]
+        super_parcels[['fips', 'sp_id', 'cluster_ID', key_field, 'pcount', 'area_ratio', 'p_area', 'sp_area', 'cbi', 'geometry']]
         .to_crs(epsg=4326)
     )
 
