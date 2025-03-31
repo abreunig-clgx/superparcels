@@ -90,13 +90,13 @@ def build_sp_fixed(
     
         if len(cluster_filter) > 0:
             # calcualte total area
-            total_area = owner_parcels['cluster_area'].sum()
+            total_area = cluster_filter.groupby('cluster')['cluster_area'].sum()
 
             # add attributes
             cluster_filter = add_attributes(
                 cluster_filter,
                 pcount=cluster_filter['cluster'].map(clean_counts),
-                p_area=total_area
+                p_area=cluster_filter['cluster'].map(total_area),
             )
             cluster_filter = cluster_filter[[key_field, 'puid', 'cluster', 'pcount', 'p_area', 'geometry']]
             clustered_parcel_data = pd.concat([clustered_parcel_data, cluster_filter], ignore_index=True)

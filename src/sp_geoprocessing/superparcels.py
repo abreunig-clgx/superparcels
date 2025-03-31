@@ -10,17 +10,24 @@ def build_superparcels(df, buffer, dissolve_by='cluster_ID', area_threshold=None
     Dissolves clusters into super-parcels.
     Returns a GeoDataFrame with super-parcels.
     """
+    #logger.info('Calculating mitre limit...')
+    #df['mitre'] = df['geometry'].apply(compute_mitre_limit)
+
+    #mitre_max = df.groupby(dissolve_by)['mitre'].max().reset_index()
+
     sp = df.dissolve(by=dissolve_by).reset_index()
+
+    #sp['max_mitre'] = sp[dissolve_by].map(mitre_max.set_index(dissolve_by)['mitre'])
+    
     #cross-boundary indicator
     logger.info('Calculating cross-boundary indicator...')
     sp['cbi'] = sp['geometry'].apply(lambda x: 1 if x.geom_type == 'MultiPolygon' else 0)
 
-    logger.info('Calculating mitre limit...')
-    sp['mitre'] = sp['geometry'].apply(compute_mitre_limit)
+    
 
     logger.info('Applying buffer...')
-    sp['geometry'] = sp.apply(lambda x: x.geometry.buffer(buffer, join_style=2, mitre_limit=x['mitre']), axis=1)
-    sp['geometry'] = sp.apply(lambda x: x.geometry.buffer(-buffer, join_style=2, mitre_limit=x['mitre']), axis=1)
+    sp['geometry'] = sp.apply(lambda x: x.geometry.buffer(buffer), axis=1)
+    sp['geometry'] = sp.apply(lambda x: x.geometry.buffer(-buffer), axis=1)
     
     if area_threshold:
         pass

@@ -74,10 +74,9 @@ def config(ctx, build_dir, json_key, county_fips, see, update):
     config["ANALYSIS_DIR"] = analysis_subdir
     config["GCP_JSON"] = json_key
     config["GCP_PROJECT"] = 'clgx-gis-app-dev-06e3'
-    config["GCP_INPUT_DATASET"] = 'clgx_gis_dev'
-    config["GCP_INPUT_TABLE"] = 'parcel_view_1'
-    config["GCP_OUTPUT_DATASET"] = 'boundary_poc'
-    config["GCP_OUTPUT_TABLE"] = 'sp'
+    config["GCP_INPUT_DATASET"] = 'superparcels'
+    config["GCP_INPUT_TABLE"] = 'short_query_pu_pipeline_candidate_parcels'
+    config["GCP_OUTPUT_DATASET"] = 'superparcels'
     config["GCS_BUCKET"] = 'gs://geospatial-projects/super_parcels'
     config["FIPS_LIST"] = county_fips
     
