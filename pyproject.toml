@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "superparcels"
-version = "0.1.3"
+version = "0.1.4"
 requires-python = ">=3.11"
 description = "CLI tool for SuperParcel Library"
 readme = "README.md"
