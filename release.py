@@ -90,7 +90,7 @@ def main():
 
     # Prevent releasing from any branch other than main
     branch = subprocess.check_output("git rev-parse --abbrev-ref HEAD", shell=True).decode().strip()
-    if branch != "main" and not args.dry_run:
+    if branch != "master" and not args.dry_run:
         print(f"❌ You are on '{branch}', not 'main'. Release only from main!")
         exit(1)
 
