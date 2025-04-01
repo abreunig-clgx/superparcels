@@ -119,7 +119,7 @@ def main():
     run_command(f'git commit -m "Update changelog for v{new_version}"', dry_run=args.dry_run)
 
     # Step 3: push
-    run_command("git push origin main --tags", dry_run=args.dry_run)
+    run_command("git push origin master --tags", dry_run=args.dry_run)
 
     wheel_path = f"dist/sp-{new_version}-py3-none-any.whl"
 
