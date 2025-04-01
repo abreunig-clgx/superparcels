@@ -1,3 +1,8 @@
+## v0.1.3 - 2025-04-01
+
+- Bump version to 0.1.3
+- Update changelog for v0.1.2
+
 ## v0.1.2 - 2025-04-01
 
 - Bump version to 0.1.2
