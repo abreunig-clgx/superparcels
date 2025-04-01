@@ -14,7 +14,7 @@ from sp_geoprocessing.utils import (
     segregate_outliers,
     add_attributes
 )
-from helper import setup_logger
+#from helper import setup_logger
 
 logger = logging.getLogger(__name__)
 def build_sp_fixed(
@@ -24,7 +24,6 @@ def build_sp_fixed(
     distance_threshold=200, 
     sample_size=3,
     area_threshold=None,
-    qa=False # if true, trigger cprofiler
     ):
     """
     Executes the clustering and super parcel creation process.
@@ -37,20 +36,20 @@ def build_sp_fixed(
     sample_size (int): Minimum number of samples for DBSCAN clustering.
     area_threshold (int): Minimum area threshold for super parcel creation.
     """
-    class TqdmToLogger:
-        def write(self, message):
-            # Avoid logging empty messages (e.g., newlines)
-            message = message.strip()
-            if message:
-                logger.info(message)
-        def flush(self):
-            pass
+    #class TqdmToLogger:
+    #    def write(self, message):
+    #        # Avoid logging empty messages (e.g., newlines)
+    #        message = message.strip()
+    #        if message:
+    #            logger.info(message)
+    #    def flush(self):
+    #        pass
     parcels = parcels.reset_index(drop=True)
     parcels['puid'] = parcels.index
     # setup cProfiler
-    if qa:
-        # enable cProfiler
-        pass
+    #if qa:
+    #    # enable cProfiler
+    #    pass
     
     utm = parcels.estimate_utm_crs().to_epsg()
     parcels = parcels.to_crs(epsg=utm)  
@@ -76,6 +75,7 @@ def build_sp_fixed(
 
         owner_parcels['cluster'] = clusters # clustert ID
         owner_parcels['cluster_area'] = owner_parcels['geometry'].area
+        owner_parcels['cluster_area'] = owner_parcels['cluster_area'].astype(int)
 
         counts = owner_parcels['cluster'].value_counts() # pd.series of cluster counts
         
@@ -135,6 +135,8 @@ def build_sp_fixed(
         sp_area=super_parcels['geometry'].area,
         area_ratio=super_parcels['p_area'] / super_parcels['geometry'].area,
     )
+    super_parcels['sp_area'] = super_parcels['sp_area'].astype(int)
+    super_parcels['p_area'] = super_parcels['p_area'].astype(int)
 
     # FINAL TABLE
     super_parcels = (

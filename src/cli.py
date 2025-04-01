@@ -2,7 +2,7 @@ import sys
 import logging
 import click
 import sp_cmds
-from helper import get_config_path
+from helper import get_config_path, get_version
 
 logging.basicConfig(
     level=logging.INFO,  # or INFO based on verbose
@@ -22,6 +22,7 @@ def cli(ctx, verbose):
     ctx.ensure_object(dict)
     ctx.obj["VERBOSE"] = verbose
     ctx.obj["CONFIG"] = get_config_path()
+    ctx.obj['VERSION'] = get_version()
 
     
     # Set up logging based on the verbose flag

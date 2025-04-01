@@ -9,7 +9,11 @@ from pathlib import Path
 import json
 import subprocess
 import click
+import tomllib
+import multiprocessing
 import logging
+
+from sp_build import build_sp_fixed
 
 logger = logging.getLogger('sp_cmds')
 
@@ -60,7 +64,7 @@ def parse_to_int_list(ctx, param, value):
 
     return result
 
-import click
+
 
 def parse_key_value(ctx, param, value):
     """Parses key-value pairs into a dictionary.
@@ -273,7 +277,13 @@ def build_sp_args(
     owner_field: str,
     sample_size: int,
     area_threshold: float,
-    output_dir: str
+    timestamp: str,
+    version: str,
+    bq_output_dir: str,
+    local_output_dir: str,
+    bq_upload: bool,
+    local_upload: bool,
+    json_key: str,
 ) -> List[Tuple]:
     
     
@@ -294,8 +304,20 @@ def build_sp_args(
         Sample size for subsampling parcels (if applicable).
     area_threshold : float
         Minimum area to consider.
-    output_dir : str
-        Directory where output files should be saved.
+    timestamp : str
+        Timestamp for the output files.
+    version : str
+        The version of the code.
+    bq_output_dir : str 
+        The BigQuery table prefix for output.
+    local_output_dir : str
+        The local directory for output.
+    bq_upload : bool
+        If True, upload to BigQuery.
+    local_upload : bool
+        If True, save locally.
+    json_key : str
+        Path to the JSON key file for BigQuery authentication.
 
 
     Returns
@@ -320,7 +342,13 @@ def build_sp_args(
                 dt,
                 sample_size,
                 area_threshold,
-                output_dir
+                timestamp,
+                version,
+                bq_output_dir,
+                local_output_dir,
+                bq_upload,
+                local_upload,
+                json_key
             ))
 
     return sp_args
@@ -354,5 +382,134 @@ def load_config(config_path: str = None) -> dict:
 def save_config(config_path: str = None, config: dict = None) -> None:
     with open(config_path, "w") as f:
         json.dump(config, f, indent=2)
+
+
+
+def get_version():
+    pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
+    with pyproject_path.open("rb") as f:
+        data = tomllib.load(f)
+    return data["project"]["version"]
+
+
+
+
+def create_batches(arg_tuples, batch_size):
+    """
+    Split a list of argument tuples into batches of a specified size.
+
+    This generator function yields batches (sublists) of argument tuples for processing, each with a length 
+    equal to 'batch_size' (except possibly the last batch).
+
+    Parameters:
+        arg_tuples (list): A list of argument tuples.
+        batch_size (int): The desired number of tuples in each batch.
+
+    Yields:
+        list: A batch (sublist) of argument tuples.
+    """
+    for i in range(0, len(arg_tuples), batch_size):
+        yield arg_tuples[i:i + batch_size]
+
+def parse_sp_fixed_args(task_tuple):
+    """
+    Parses a tuple of arguments for the build_sp_fixed function.
+    Returns the parsed arguments as a dictionary.
+    """
+    sp_fixed_build_args = task_tuple[:6]  # Extract the first six arguments for the function
+
+    meta = {
+        'fips': task_tuple[1],
+        'dt': task_tuple[3],
+        'ss': task_tuple[4],
+        'at': task_tuple[5],
+        'timestamp': task_tuple[6],
+        'version': task_tuple[7],
+        'bq_output_dir': task_tuple[8],
+        'local_output_dir': task_tuple[9],
+        'bq_upload': task_tuple[10],
+        'local_upload': task_tuple[11],
+        'json_key': task_tuple[12]
+    }
+
+    return sp_fixed_build_args, meta
+
+
+def process_result(result, meta):
+    """
+    Callback to process each completed task.
+    'meta' contains:
+      - fips: the FIPS code for logging
+      - dt: distance threshold
+      - ss: sample size
+      - at: area threshold (could be None)
+      - timestamp: timestamp for the output file
+        - version: version of the code
+        - bq_output_dir: BigQuery output directory
+        - local_output_dir: local output directory
+        - bq_upload: boolean for BigQuery upload
+        - local_upload: boolean for local upload
+        - json_key: path to the JSON key file
+
+    """
+    if result is None or len(result) == 0:
+        logger.error(f"No results for {meta['fips']}. Skipping...")
+        return
+
+    # Add timestamp and version field to the result
+    result['timestamp'] = meta['timestamp']
+    result['version'] = meta['version']
+
+    # Build filename based on the parameters
+    if meta['at']:
+        fn = build_filename('spfixed', '-', f"dt{meta['dt']}", f"ss{meta['ss']}", f"at{meta['at']}")
+    else:
+        fn = build_filename('spfixed', '-', f"dt{meta['dt']}", f"ss{meta['ss']}")
+
+    # Upload to BigQuery if enabled
+    if meta['bq_upload']:
+        output_table_name = f"{meta['bq_output_dir']}.{fn}"
+        logger.info(f"Uploading to BigQuery for {meta['fips']}: {output_table_name}")
+        gdf_to_bigquery(
+            gdf=result,
+            table_name=output_table_name,
+            json_key=meta['json_key'],
+            write_type='WRITE_APPEND'
+        )
+        logger.info("Upload to BigQuery successful.")
+
+    # Save locally if enabled
+    if meta['local_upload']:
+        output_local_name = os.path.join(meta['local_output_dir'], f"{fn}.shp")
+        logger.info(f"Saving to local directory for {meta['fips']}: {output_local_name}")
+        result.to_file(output_local_name, driver='ESRI Shapefile')
+        logger.info(f"Local upload successful: {output_local_name}")
+
+
+
+
+def process_batch(func, batch, pool_size):
+    """
+    Processes a single batch of tasks asynchronously.
+    Each task is submitted to a shared pool, and results are processed immediately upon completion.
+    """
+    # Prepare a list of async results to later ensure all tasks in the batch finish
+    async_results = []
+    
+    # Create a process pool limited to the desired number of concurrent jobs
+    with multiprocessing.Pool(processes=pool_size) as pool:
+        for task in batch:
+            
+            if func.__name__ == 'build_sp_fixed':
+                build_args, meta = parse_sp_fixed_args(task)
+
+            # Submit the task asynchronously with a callback that processes the result immediately.
+            async_result = pool.apply_async(func, args=build_args,
+                                            callback=lambda res, meta=meta: process_result(res, meta))
+            async_results.append(async_result)
+
+        for async_result in async_results:
+            async_result.wait()
+
 
 

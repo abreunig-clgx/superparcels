@@ -54,44 +54,9 @@ def num_2_short_form(number):
         return str(number)
 
 
-def create_batches(arg_tuples, batch_size):
-    """
-    Split a list of argument tuples into batches of a specified size.
-
-    This generator function yields batches (sublists) of argument tuples for processing, each with a length 
-    equal to 'batch_size' (except possibly the last batch).
-
-    Parameters:
-        arg_tuples (list): A list of argument tuples.
-        batch_size (int): The desired number of tuples in each batch.
-
-    Yields:
-        list: A batch (sublist) of argument tuples.
-    """
-    for i in range(0, len(arg_tuples), batch_size):
-        yield arg_tuples[i:i + batch_size]
 
 
-def mp_framework(func, arg_tuples, n_jobs=None):
-    """
-    Execute a function in parallel using multiprocessing.
 
-    This function provides a multiprocessing framework to execute the specified function in parallel across multiple 
-    processes. It uses a process pool to apply the function to each tuple of arguments in 'arg_tuples' via starmap.
-
-    Parameters:
-        func (callable): The function to be executed in parallel.
-        arg_tuples (list of tuples): A list of argument tuples to pass to the function.
-        n_jobs (int, optional): The number of parallel processes to use. If None, the default is used.
-
-    Returns:
-        None
-    """
-    
-    with multiprocessing.Pool(processes=n_jobs) as pool:
-        results = pool.starmap(func, arg_tuples)
-
-    return results
 
 def add_attributes(df, **kwargs):
     for key, value in kwargs.items():

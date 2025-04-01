@@ -7,7 +7,15 @@ import geopandas as gpd
 import json
 import logging
 from datetime import datetime, timezone
-from helper import get_config_path, load_config, save_config, parse_to_int_list, parse_to_str_list, parse_key_value
+from helper import (
+    load_config, 
+    save_config, 
+    parse_to_int_list, 
+    parse_to_str_list, 
+    parse_key_value,
+    create_batches,
+    process_batch
+)
 
 # Configure the root logger
 logger = logging.getLogger(__name__)
@@ -122,7 +130,7 @@ def build(ctx):
 @click.option('-pb', type=click.Path(), default=None,
               help="Path to Place Boundaries Shapefile. FUTURE IMPLEMENTATION")
 @click.pass_context
-def sp1(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upload, build_dir, qa, pb):
+def spfix(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upload, build_dir, qa, pb):
     from helper import (
         check_paths, 
         build_filename,
@@ -130,13 +138,11 @@ def sp1(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upl
         bigquery_to_gdf,
         gdf_to_bigquery,
         build_sp_args,
-        get_git_commit_hash
-
     )
-    from build import build_sp_fixed
-    from sp_geoprocessing.tools import create_batches, mp_framework
+    from sp_build import build_sp_fixed
+    
     click.echo("_________________________________________________________")
-    logger.info("BUILDING SuperParcel Phase 1")
+    logger.info("BUILDING SuperParcel Fixed Epsilon Phase 1")
     click.echo("-")
     click.echo("-")
 
@@ -149,10 +155,11 @@ def sp1(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upl
         logger.error('Cannot find config.json!!!')
         
     timestamp = datetime.now(timezone.utc).replace(second=0, microsecond=0)
-    commit_hash = get_git_commit_hash()
+    version = ctx.obj["VERSION"]
 
     logger.debug(f"Timestamp: {timestamp}")
-    logger.debug(f"Commit Hash: {commit_hash}")
+    logger.debug(f"Version: {version}")
+ 
 
 
     # Use user-provided build directory if available; otherwise, fall back to config.
@@ -166,7 +173,7 @@ def sp1(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upl
     try:
         fips = fips or config.get("FIPS_LIST", [])
         input_dir = os.makedirs(os.path.join(bd, "inputs"), exist_ok=True) or config.get("INPUT_DIR")
-        output_dir = os.makedirs(os.path.join(bd, "outputs"), exist_ok=True) or config.get("OUTPUT_DIR")
+        local_output_dir = os.makedirs(os.path.join(bd, "outputs"), exist_ok=True) or config.get("OUTPUT_DIR")
         logger.debug(f"FIPS List: {fips}")
     except KeyError:
         raise click.ClickException("FIPS code(s) must be provided as an argument (-fips) or in the config file.")    
@@ -230,87 +237,32 @@ def sp1(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upl
     # list of tuples for each arg combination
     sp_args = build_sp_args(
         candidate_gdf=candidate_gdf,
-        fips_field=fips_field,
-        owner_field=owner_field,
-        dist_thres=dist_thres,
-        sample_size=sample_size,
-        area_threshold=area_threshold,
-        output_dir=bq_output_path
+        fips_field=fips_field, # arg 1
+        owner_field=owner_field, # arg 2
+        dist_thres=dist_thres, # arg 3
+        sample_size=sample_size, # arg 4
+        area_threshold=area_threshold, # arg 5
+        timestamp=timestamp, # arg 6
+        version=version, # arg 7
+        bq_output_dir=bq_output_path, # arg 8
+        local_output_dir=local_output_dir, # arg 9
+        bq_upload=bq_upload, # arg 10
+        local_upload=local_upload, # arg 11
+        json_key=json_key # arg 12
     )
+
+    click.echo(f"SuperParcel Args: {len(sp_args)}")
 
     logger.debug(f"SP Args Example Tuple: {sp_args[0]}")
 
-    if len(dist_thres) == 1:
-        batch_size = min(len(fips), 10) # 10 is the max number of jobs that can be run in parallel
-    else:
-        # group all distance thresholds together ([fip1-dt1, fip2-dt1, fip3-dt1], [fip1-dt2, fip2-dt2, fip3-dt2], etc.)
-        batch_size = len(dist_thres) 
+    batch_size = min(len(sp_args), 10)  # Set batch size to 10 or the number of args, whichever is smaller
 
-    logger.info(f"Batch Size: {batch_size}")
-    batches = list(create_batches(sp_args, batch_size))
+  
+    # RUN SUPERPARCEL BUILD
+    logger.info(f'STARTING SUPERPARCEL BUILD')
+    process_batch(build_sp_fixed, sp_args, pool_size=batch_size)
 
-    for batch in batches:
-        logger.info('______________________')
-        batch_ids = [args[1] for args in batch]  # Using FIPS from the tuple
-        dt_ids = [args[3] for args in batch]  # Using distance threshold from the tuple
-        ss_ids = [args[4] for args in batch]  # Using sample size from the tuple
-        at_ids = [args[5] for args in batch]  # Using area threshold from the tuple
-        batch_output_dirs = [args[-1] for args in batch]  # Using output directory from the tuple
-        batch = [args[:-1] for args in batch]  # Removing output directory from the tuple
-
-        logger.info(f'Processing Batch: {batch_ids}')
-        logger.info(f'Distance Thresholds: {dt_ids}')
-        logger.info(f'Sample Size: {ss_ids}')
-        logger.info(f'Area Threshold: {at_ids}')
-        logger.info(f'Output Directories: {batch_output_dirs}')
-
-
-        # RUN SUPERPARCEL BUILD
-        logger.info(f'STARTING SUPERPARCEL BUILD')
-        results = mp_framework(build_sp_fixed, batch, n_jobs=batch_size) 
-
-        for i, result in enumerate(results):
-            if result is None or len(result) == 0:
-                logger.error(f"No results for batch {i}. Skipping...")
-                continue
-
-            # GATHER BATCH INFO
-            output_bigq_path = batch_output_dirs[i]
-            _fips = batch_ids[i]
-            _dt = dt_ids[i]
-            _ss = ss_ids[i]
-            _at = at_ids[i]
-
-            # add timstamp field to result
-            result['timestamp'] = timestamp
-            
-            if _at:
-                fn = build_filename(f'spfixed', '-', f'dt{_dt}', f'ss{_ss}', f'at{_at}')
-            else:
-                fn = build_filename(f'spfixed', '-', f'dt{_dt}', f'ss{_ss}')
-
-            if bq_upload: 
-                output_table_name = f'{output_bigq_path}.{fn}'
-                logger.info(f'Uploading to BigQuery for {_fips}: {output_table_name}')
-                
-                gdf_to_bigquery(
-                    gdf=result,
-                    table_name=output_table_name,
-                    json_key=json_key,
-                    write_type='WRITE_APPEND'
-                )
-                logger.info(f'Upload to BigQuery successful.')
-
-            if local_upload:
-                
-                output_local_name = os.path.join(output_dir, f'{fn}.shp')
-
-                logger.info(f'Saving to local directory for {_fips}: {output_local_name}')
-                result.to_file(output_local_name, driver='ESRI Shapefile')
-                logger.info(f'Local upload successful: {output_local_name}')
-       
     
-
     logger.info("BUILD COMPLETE.")
     click.echo("_________________________________________________________")
 
