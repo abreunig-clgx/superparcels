@@ -121,7 +121,7 @@ def main():
     # Step 3: push
     run_command("git push origin master --tags", dry_run=args.dry_run)
 
-    wheel_path = f"dist/sp-{new_version}-py3-none-any.whl"
+    wheel_path = f"dist/superparcels-{new_version}-py3-none-any.whl"
 
     cmd = f'gh release create v{new_version} {wheel_path} -t "v{new_version}"'
     if release_notes:
