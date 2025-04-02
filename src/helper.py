@@ -480,7 +480,8 @@ def process_result(result, meta):
 
     # Save locally if enabled
     if meta['local_upload']:
-        output_local_name = os.path.join(meta['local_output_dir'], f"{fn}.shp")
+        local_fn = f"{fn}_{meta['fips']}.shp"
+        output_local_name = os.path.join(meta['local_output_dir'], local_fn)
         logger.info(f"Saving to local directory for {meta['fips']}: {output_local_name}")
         result.to_file(output_local_name, driver='ESRI Shapefile')
         logger.info(f"Local upload successful: {output_local_name}")

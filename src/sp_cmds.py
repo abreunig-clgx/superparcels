@@ -130,13 +130,11 @@ def build(ctx):
 @click.option('-pb', type=click.Path(), default=None,
               help="Path to Place Boundaries Shapefile. FUTURE IMPLEMENTATION")
 @click.pass_context
-def spfix(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upload, build_dir, qa, pb):
+def spfixed(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upload, build_dir, qa, pb):
     from helper import (
         check_paths, 
-        build_filename,
         sql_query,
         bigquery_to_gdf,
-        gdf_to_bigquery,
         build_sp_args,
     )
     from sp_build import build_sp_fixed
@@ -251,15 +249,18 @@ def spfix(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_u
         json_key=json_key # arg 12
     )
 
-    click.echo(f"SuperParcel Args: {len(sp_args)}")
-
     logger.debug(f"SP Args Example Tuple: {sp_args[0]}")
+    logger.info(f"Number of SuperParcel Iterations: {len(sp_args)}")
 
     batch_size = min(len(sp_args), 10)  # Set batch size to 10 or the number of args, whichever is smaller
-
+    logger.info(f'Running {batch_size} concurrent processes')
   
     # RUN SUPERPARCEL BUILD
+    click.echo("-")
+    click.echo("-")
     logger.info(f'STARTING SUPERPARCEL BUILD')
+    click.echo("-")
+    click.echo("-")
     process_batch(build_sp_fixed, sp_args, pool_size=batch_size)
 
     

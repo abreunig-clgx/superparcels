@@ -123,7 +123,7 @@ class BigQ:
             raise RuntimeError("BigQuery client is not authenticated. Please authenticate first.")
 
         try:
-            self.logger.info("Preparing GeoDataFrame for upload...")
+            #self.logger.info("Preparing GeoDataFrame for upload...")
 
             # Convert geometry column to WKT if it's not already a string.
             if "geometry" in gdf.columns:
@@ -132,14 +132,14 @@ class BigQ:
                     lambda geom: geom.wkt if not isinstance(geom, str) else geom
                 )
 
-            self.logger.info("Uploading GeoDataFrame to BigQuery...")
+            #self.logger.info("Uploading GeoDataFrame to BigQuery...")
             job_config = bigquery.LoadJobConfig(
                 write_disposition=write_disposition,
                 autodetect=autodetect
             )
             job = self.client.load_table_from_dataframe(gdf, table_id, job_config=job_config)
             job.result()  # Wait for the load job to complete
-            self.logger.info(f"Uploaded {job.output_rows} rows to {table_id}")
+            #self.logger.info(f"Uploaded {job.output_rows} rows to {table_id}")
         except Exception as e:
             self.logger.error(f"Failed to upload GeoDataFrame to BigQuery: {e}")
             raise
