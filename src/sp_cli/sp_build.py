@@ -1,7 +1,6 @@
 
 import pandas as pd
 import geopandas as gpd
-import cProfile
 import warnings
 warnings.filterwarnings('ignore')
 import logging
@@ -14,7 +13,6 @@ from sp_geoprocessing.utils import (
     segregate_outliers,
     add_attributes
 )
-#from helper import setup_logger
 
 logger = logging.getLogger(__name__)
 def build_sp_fixed(

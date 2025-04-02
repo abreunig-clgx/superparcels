@@ -13,8 +13,6 @@ import tomllib
 import multiprocessing
 import logging
 
-from sp_build import build_sp_fixed
-
 logger = logging.getLogger('sp_cmds')
 
 
@@ -386,7 +384,7 @@ def save_config(config_path: str = None, config: dict = None) -> None:
 
 
 def get_version():
-    pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
+    pyproject_path = Path(__file__).parent.parent.parent / "pyproject.toml"
     with pyproject_path.open("rb") as f:
         data = tomllib.load(f)
     return data["project"]["version"]

@@ -7,7 +7,7 @@ import geopandas as gpd
 import json
 import logging
 from datetime import datetime, timezone
-from helper import (
+from sp_cli.helper import (
     load_config, 
     save_config, 
     parse_to_int_list, 

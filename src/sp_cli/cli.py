@@ -1,8 +1,8 @@
 import sys
 import logging
 import click
-import sp_cmds
-from helper import get_config_path, get_version
+import sp_cli.sp_cmds
+from sp_cli.helper import get_config_path, get_version
 
 logging.basicConfig(
     level=logging.INFO,  # or INFO based on verbose
@@ -29,8 +29,8 @@ def cli(ctx, verbose):
     logging_level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(level=logging_level)
     
-cli.add_command(sp_cmds.config)
-cli.add_command(sp_cmds.build)
-cli.add_command(sp_cmds.dt_analysis)
+cli.add_command(sp_cli.sp_cmds.config)
+cli.add_command(sp_cli.sp_cmds.build)
+cli.add_command(sp_cli.sp_cmds.dt_analysis)
 
 

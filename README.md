@@ -22,8 +22,8 @@
         - [spfixed docs \& options:](#spfixed-docs--options)
         - [spfixed options:](#spfixed-options)
         - [Examples](#examples-1)
-          - [Build superparcels with distance thresholds 30m \& 50m and default fips from config](#build-superparcels-with-distance-thresholds-30m--50m-and-default-fips-from-config)
-          - [Build superparcels for 06075 and write *only* to local (shapefiles)](#build-superparcels-for-06075-and-write-only-to-local-shapefiles)
+          - [Build superparcels with distance thresholds 30m \& 50m and use default fips from config](#build-superparcels-with-distance-thresholds-30m--50m-and-use-default-fips-from-config)
+          - [Build superparcels for 06075 and write *only* to local (shapefiles), verbose](#build-superparcels-for-06075-and-write-only-to-local-shapefiles-verbose)
 
 ## Introduction
 The SuperParcels CLI Tool enables users to build superparcels for any county in the US. The tool utilizes the sp_geoprocessing library which is the core functionality behind the superparcel product, and provides additional tooling to big query upload and download. 
@@ -75,8 +75,12 @@ Versioning is stored in the output tables and is taking from the project's toml 
     pip install path/to/superparcels-<latest-version>-py3-none-any.whl
    ```
 5. Developer User Install:
+   
+   5.1 Ensure repo is cloned then cd to root dir 
+   
+   5.2 Run:
    ```
-    pip install path/to/superparcels-<latest-version>-py3-none-any.whl[dev]
+    pip install -e .[dev]
    ```
 6. Test Installation by running:
    ```
@@ -144,6 +148,7 @@ sps config -update GCP_JSON=/new/gcp.json, FIPS_LIST=[55107,16001]
 ```
 #### Build
 Build SuperParcels using various subcommands
+
 **Subcommands:**
 
 - spfixed (stable)
@@ -184,11 +189,11 @@ sps build spfixed -h
                                   IMPLEMENTATION*
 
 ##### Examples
-###### Build superparcels with distance thresholds 30m & 50m and default fips from config
+###### Build superparcels with distance thresholds 30m & 50m and use default fips from config
 ```
 sps build spfixed -dt 30,50
 ```
-###### Build superparcels for 06075 and write *only* to local (shapefiles)
+###### Build superparcels for 06075 and write *only* to local (shapefiles), verbose
 ```
-sps build spfixed -fips 06075 -local true --bq-upload false
+sps -v build spfixed -fips 06075 -local true --bq-upload false
 ```

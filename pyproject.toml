@@ -24,14 +24,14 @@ dependencies = [
 ]
 
 [project.scripts]
-sps = "cli:cli"
+sps = "sp_cli.cli:cli"
 
 [tool.setuptools]
 package-dir = {"" = "src"} 
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["sp_geoprocessing", "bigq"]
+include = ["sp_geoprocessing", "bigq", "sp_cli"]
 
 [project.optional-dependencies]
 dev = ["pytest", "tomlkit", "build"]
