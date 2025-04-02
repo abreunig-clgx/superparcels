@@ -1,3 +1,13 @@
+## v0.1.6 - 2025-04-02
+
+- Bump version to 0.1.6
+- moved cli to sp_cli lib for pack test
+- update docs and README
+- spfix to spfixed and better logging messages; local writes with fips in fn
+- new mp framework; testing inprogress
+- update release--functional
+- Update changelog for v0.1.5
+
 ## v0.1.5 - 2025-04-01
 
 - Bump version to 0.1.5
