@@ -1,109 +1,194 @@
-# SuperParcels CLI Tool Instructions
-1. Activate the virtual environment
-```
-conda activate sp_dev
-```
-2. Install superparcels package
-```
-cd ../superparcels/src/
-pip install -e .
-```
-3. Test the CLI tool
-```
-sps -h
-```
-4. Run Setup in the CLI tool
-```
-sps setup config -bd <build-dir-path> -csv <local path to candidate parcel csv> -fips <FIPS field in csv>
-```
-5. Run Build for Phase 1 on the CLI tool
-```
-# Will run all fips in config.json
-sps build sp1
-
-# Will run specific fips
-sps build sp1 -fips <fips>
-
-# To run with cProfiler, add..
-sps build sp1 -qa True
-```
-
-Austin Breunig
-January 16, 2025
-
-
-# SuperParcels POC (Phase II.): Exploring Adaptive Epsilon in Urban Areas
+# SuperParcels CLI Tool
+- [SuperParcels CLI Tool](#superparcels-cli-tool)
+  - [Introduction](#introduction)
+  - [Requirements and Installation](#requirements-and-installation)
+    - [Python Requirements](#python-requirements)
+    - [Big Query Requirements](#big-query-requirements)
+    - [Installation](#installation)
+  - [CLI Usage](#cli-usage)
+    - [CLI Entry Point: *sps*](#cli-entry-point-sps)
+    - [Commands:](#commands)
+      - [Calling for Help gives helpful docs on how to use CLI. The help flag can be used on any subsequent sub-commands.](#calling-for-help-gives-helpful-docs-on-how-to-use-cli-the-help-flag-can-be-used-on-any-subsequent-sub-commands)
+      - [Verbose: Logs helpful messages used for debugging purposes](#verbose-logs-helpful-messages-used-for-debugging-purposes)
+      - [Config](#config)
+        - [Config Docs](#config-docs)
+        - [Config Options](#config-options)
+        - [Examples](#examples)
+          - [Create config file](#create-config-file)
+          - [Print Config](#print-config)
+          - [Update Config](#update-config)
+      - [Build](#build)
+      - [spfixed](#spfixed)
+        - [spfixed docs \& options:](#spfixed-docs--options)
+        - [spfixed options:](#spfixed-options)
+        - [Examples](#examples-1)
+          - [Build superparcels with distance thresholds 30m \& 50m and default fips from config](#build-superparcels-with-distance-thresholds-30m--50m-and-default-fips-from-config)
+          - [Build superparcels for 06075 and write *only* to local (shapefiles)](#build-superparcels-for-06075-and-write-only-to-local-shapefiles)
 
 ## Introduction
+The SuperParcels CLI Tool enables users to build superparcels for any county in the US. The tool utilizes the sp_geoprocessing library which is the core functionality behind the superparcel product, and provides additional tooling to big query upload and download. 
 
-In the context of parcel clustering, accurately determining the epsilon (ε) parameter for density-based clustering algorithms such as DBSCAN is critical. For rural parcels, a fixed epsilon of 200 meters is often sufficient, as parcel distances tend to be more uniform. However, this value is inappropriate for urban parcels, where distances between parcels are generally much smaller and more varied due to denser development and infrastructure.
+The CLI is specific to the handling of big query, therefore, it is required to have GCP authentication to the required tables for this package to run correctly. Furthermore, metadata is hard-coded, so this tool *only* points to specific tables. Future development will allow for flexibility in this regard. 
 
-To address this challenge, this report outlines a method for calculating an adaptive epsilon specific to parcels within a designated urban area, referred to here as a "place boundary." The approach is designed to improve the precision and relevance of clustering in urban environments, ensuring that the epsilon value better reflects the scale and spatial arrangement of urban parcels.
+The CLI provides two main commands: *config* and *build*. Although not required, it is highly recommended to run the config command before build. Config stores paths and metadata used in the build process.
 
-The following sections will compare the performance of this adaptive epsilon approach against the original fixed 200-meter epsilon on densely urban counties such as Los Angeles, Alameda, and San Francisco counties. We will examine the differences in clustering outcomes between the original and new methods, highlighting the improvements in precision and relevance for urban parcel clustering.
-
-## Methodology
-
-The proposed method involves a series of steps to compute and apply the adaptive epsilon. First, we apply k-means clustering to group parcels within the place boundary into regions of approximately 200 parcels per cluster. Next, a KD-Tree is built for each region to efficiently calculate the pairwise distances between parcels. These distances are then smoothed, and the "elbow" method is employed to identify a suitable epsilon value for each region. This epsilon is then used in the DBSCAN algorithm to identify same-owner parcels within each region.
-
-<img src="Images\phase2\I-III_Process.PNG" width="1000" />
-
-Afterward, a merging process is used to expand the identification of same-owner parcels across adjacent regions, ensuring that all parcels with the same owner are correctly clustered. The final result is a set of same-owner clusters, each with a unique cluster ID, which are ultimately used to define the boundaries of the final superparcel.
-
-<img src="Images\phase2\IV-V_Process.PNG" width="1000" />
-
-This adaptive approach allows for more accurate and meaningful clustering in urban environments, accommodating the spatial complexities inherent in dense, urban parcel distributions. 
-
-## Results
-When comparing the original 200-meter epsilon to the adaptive epsilon approach, we see the adaptive method produces a significantly tighter and more localized boundary for each cluster.
-
-#### Alameda
-<img src="Images\phase2\Alameda2.png" width="1000" />
-
-In contrast, the original 200-meter epsilon captures same-owner parcels that are far outside of a logical area, often including parcels that, while owned by the same entity, are separated by substantial distances. This can result in clusters that span across different neighborhoods or even parts of the county that have no direct proximity or connection, leading to over-generalization in the clustering process. The larger epsilon essentially groups parcels that are not realistically "close", distorting the final superparcel boundaries.
-
-#### Los Angeles
-<img src="Images\phase2\LA2_1.png" width="1000" />
-<img src="Images\phase2\LA2_2.png" width="1000" />
-<img src="Images\phase2\LA2_3.png" width="1000" />
-
-On the other hand, the adaptive epsilon approach calculates a smaller, more appropriate epsilon value, reflecting the true spatial proximity of urban parcels. By utilizing k-means clustering to break the area into smaller, more manageable regions, and then refining the epsilon based on pairwise distances within these regions, the adaptive method ensures that only those same-owner parcels that are in close proximity are considered part of the same cluster. This leads to more accurate and relevant cluster boundaries, which are both smaller and more reflective of actual urban development patterns.
-
-#### San Francisco
-<img src="Images\phase2\SF2_1.png" width="1000" />
-<img src="Images\phase2\SF2_2.png" width="1000" />
-
-However, although the adaptive approach results in more accurately built superparcels, it also captures fewer superparcels overall. The original 200-meter epsilon, by contrast, produces many more superparcels, as its larger proximity range leads to the inclusion of a broader set of parcels in the same cluster. This brings up an important consideration: Could the adaptive approach be improved by refining the parameters further? Specifically, it may be possible to maintain the focus on local same-owner parcels while slightly expanding the proximity range to capture more same-owner parcels without compromising the overall accuracy and relevance of the clusters. Such a refinement could strike a balance between precision and coverage, allowing for a more comprehensive representation of same-owner parcel clusters in urban environments.
-
-Ultimately, the adaptive approach demonstrates an ability to account for the denser, more complex parcel distributions typical of urban areas. It ensures that same-owner parcels are clustered in a way that is both geographically logical and consistent with urban realities. However, further refinement of the parameters could help capture more of the same-owner parcels without sacrificing the localized accuracy that the adaptive method provides.
-
-### SuperParcel Comparison: Adaptive vs. Fixed
-<img src="Images\phase2\area_comparison_adaptive_vs_original_Aquery.png" width="1000" />
+Versioning is stored in the output tables and is taking from the project's toml file. Users can then identify build outputs by the version of this package it was run on. Releases will be published regularly, so please check often.
 
 
-### KNN Distance Comparison by Place Boundary
-<img src="Images\phase2\knn_dist_comparison_adaptive_vs_original_Aquery.png" width="1000" />
+## Requirements and Installation 
+### Python Requirements
+
+- conda installer. Recommended installer: [miniforge](https://github.com/conda-forge/miniforge?)
+- Regular Users Package Requirements (see below for Installation Instructions):
+
+    - python >= 3.11
+    - geopandas
+    - scipy,
+    - scikit-learn
+    - google-cloud,
+    - google-cloud-storage,
+    - google-cloud-bigquery,
+    - pyarrow,
+    - db-dtypes,
+    - platformdirs
+- Developer User Package Requirements
+
+    - Regular User Packages 
+    - pytest
+    - tomlkit
+    - build
+
+### Big Query Requirements
+
+- Service Account key with BigQuery Editor privileges to: **clgx-gis-app-dev-06e3.superparcels**
+
+### Installation
+1. Install miniforge or similar conda installer
+2. Run the following commands:
+   ```
+    conda create -n <env_name> python=3.11
+    conda activate <env_name>
+   ```
+3. Download **latest** package wheel from [release](https://github.com/abreunig-clgx/superparcels/releases) page
+4. Regular User Install:
+   ```
+    pip install path/to/superparcels-<latest-version>-py3-none-any.whl
+   ```
+5. Developer User Install:
+   ```
+    pip install path/to/superparcels-<latest-version>-py3-none-any.whl[dev]
+   ```
+6. Test Installation by running:
+   ```
+    sps --help
+   ```
+## CLI Usage
+### CLI Entry Point: *sps*
+### Commands:
+#### Calling for Help gives helpful docs on how to use CLI. The help flag can be used on any subsequent sub-commands.
+```
+sps -h
+sps --help
+```
+#### Verbose: Logs helpful messages used for debugging purposes
+```
+sps --verbose
+```
+#### Config
+Builds config json file for SuperParcel build.
+```
+CONFIG JSON
+{
+    'BUILD_DIR': PATH, 
+    'INPUT_DIR': BUILD_DIR + 'inputs',
+    'OUTPUT_DIR': BUILD_DIR + 'outputs',
+    'ANALYSIS_DIR': BUILD_DIR + 'analysis',
+    'GCP_JSON': PATH.JSON,
+    'GCP_PROJECT': 'clgx-gis-app-dev-06e3', 
+    'GCP_INPUT_DATASET': 'superparcels', 
+    'GCP_INPUT_TABLE':
+        'short_query_pu_pipeline_candidate_parcels', 
+    'GCP_OUTPUT_DATASET': 'superparcels', 
+    'GCS_BUCKET': 
+        'gs://geospatial-projects/super_parcels',
+        
+    'FIPS_LIST': [fips1, fips2, etc.]}
+```
+##### Config Docs
+```
+sps config -h
+```
+##### Config Options
+
+  - -js, --json-key: *Path to GCP JSON key file*.
+
+  - -fips, --county-fips: *County FIPS to build.* Comma-seperated. No Spaces.
 
 
+  - -bd, --build-dir: *Local directory for build*.
+  - -see: *See config.json file*.
+  - -update: *Update config.json file. Key Value pairs
+                             seperated by '='. No Spaces*.
+##### Examples
+###### Create config file 
+```
+sps config -js <gcp_key.json> -fips 08031,06075 --build-dir </path/to/buildir>
+```
+###### Print Config
+```
+sps config -see
+```
+###### Update Config
+```
+sps config -update GCP_JSON=/new/gcp.json, FIPS_LIST=[55107,16001]
+```
+#### Build
+Build SuperParcels using various subcommands
+**Subcommands:**
 
-## Insights and Recommendations
-### Insights
-#### Low vs. High KNN Distance Variability
-When applying the adaptive epsilon approach to Los Angeles and San Francisco, we observe notable differences in the variability of the k-nearest neighbor (KNN) distances across the regions within each place boundary. These differences are indicative of the varying regional densities within each area, which directly impacts the clustering process.
+- spfixed (stable)
+- spmulti (in-development)
+#### spfixed
+Builds SuperParcels using a fixed epsilon --> Phase 1 Developement
+##### spfixed docs & options:
+```
+sps build spfixed -h
+```
+##### spfixed options:
 
-In Los Angeles, there is a large degree of variability in KNN distances across different place boundaries and their respective regions. This variability reflects the significant differences in parcel density across the city. In more densely developed areas, the KNN distances are shorter, while in less developed areas, they tend to be larger. This variability is advantageous because it means that the adaptive epsilon approach can effectively capture the spatial distribution of parcels, using shorter distances in denser areas and larger distances in sparser ones. This localized approach ensures that the clustering algorithm more accurately represents the true spatial relationships between parcels, which is especially important in a sprawling, diverse city like Los Angeles.
+  - -fips: *FIPS code(s) to build SuperParcel for.
+                                  Comma-seperated. No Spaces. If not provided,
+                                  will build for all FIPS codes found in
+                                  config.json*
 
-However, the variability also presents some challenges. While the adaptive epsilon is tailored to regional densities, there is a risk that some distances may be either too large or too small, leading to over- or under-clustering of same-owner parcels. In certain cases, a distance that is too large might erroneously group parcels that are not sufficiently close, while a distance that is too small might fail to capture clusters that should logically be grouped together. This trade-off underscores the importance of carefully tuning the adaptive epsilon to balance accuracy and coverage, especially in areas with high regional variability.
+  - -dt, --dist-thres: *Distance threshold list for clustering.
+                                  Comma-seperated. No Spaces. Default is 200.*
 
-In contrast, San Francisco, being a much smaller and more uniformly developed city, presents a different scenario. Since the entire city is treated as a single place boundary, the variability in KNN distances is minimal. This lack of variability suggests that San Francisco’s urban structure may be more consistent in terms of parcel density, with fewer fluctuations between densely and sparsely developed areas. Alternatively, it could be a result of the single large place boundary, which might have effectively smoothed out local density fluctuations, treating the entire city as one homogeneous area.
+  - -ss, --sample-size : *Minimum number of samples for clustering.
+                                  Default is 3.*
 
-There are two possible explanations for this low variability. First, San Francisco could indeed exhibit a more uniform density across its territory, with few large differences in parcel distribution. Second, the single large place boundary could be suppressing the smaller-scale variations in density, effectively averaging out the local fluctuations. While this lack of variability simplifies the adaptive epsilon calculation, it also means that the clustering might not capture finer-grained patterns that could exist within smaller regions or neighborhoods.
+  - -at, --area-threshold: *Minimum area threshold for super parcel
+                                  creation. Default is None. NOT 
+                                  IMPLEMENTED.*
 
-In conclusion, while Los Angeles benefits from the ability to adapt to large regional variations in density, San Francisco's relatively uniform KNN distances reflect either a consistent density or the effect of a large, generalized place boundary. This highlights the different ways in which the adaptive epsilon approach can perform in cities with differing levels of spatial complexity. For cities with high variability, such as Los Angeles, the adaptive approach proves effective in reflecting true spatial relationships, though care must be taken to address the potential challenges of varying distances. In more uniform areas like San Francisco, the approach may smooth over these variations, leading to less variability but possibly losing some finer distinctions in the clustering.
+  - -local, --local-upload: *Saves build to local build directory.
+                                  Default is False.*
 
-### Recommendations
-#### Refine Adaptive Epsilon Parameters
-Given the trade-offs between accuracy and coverage observed in the adaptive epsilon approach, it is recommended to further refine the parameters to achieve a better balance between these two objectives. By adjusting the epsilon calculation method or incorporating additional factors, such as parcel size, it may be possible to capture more same-owner parcels while maintaining the localized precision of the clusters. This refinement could involve a more nuanced approach to distance calculation, potentially incorporating multiple epsilon values based on parcel characteristics or regional densities.
+  - -bq, --bq-upload: *Uploads to BigQueryTable. Default is True.*
+  
+  - -bd, --build-dir: *Directory where you want the build to occur.
+                                  If not provided, will use the build
+                                  directory from config.json.*
 
-#### Implement Distance Thresholds Based on Regional Density
-To address the challenges of varying KNN distances in Places with high density variability, it may be beneficial to implement distance thresholds based on regional density levels. By setting different epsilon values for areas with distinct parcel densities, we could build in gurad rails to prevent extreme over- or under-clustering. 
+  - -pb: *Path to Place Boundaries Shapefile. FUTURE
+                                  IMPLEMENTATION*
+
+##### Examples
+###### Build superparcels with distance thresholds 30m & 50m and default fips from config
+```
+sps build spfixed -dt 30,50
+```
+###### Build superparcels for 06075 and write *only* to local (shapefiles)
+```
+sps build spfixed -fips 06075 -local true --bq-upload false
+```

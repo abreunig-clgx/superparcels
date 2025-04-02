@@ -11,8 +11,10 @@ readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "Austin Breunig", email = "abreunig@corelogic.com"}]
 dependencies = [
-    "tqdm",
     "click",
+    "geopandas",
+    "scipy",
+    "scikit-learn",
     "google-cloud",
     "google-cloud-storage",
     "google-cloud-bigquery",
