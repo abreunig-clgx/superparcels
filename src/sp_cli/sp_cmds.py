@@ -131,13 +131,13 @@ def build(ctx):
               help="Path to Place Boundaries Shapefile. FUTURE IMPLEMENTATION")
 @click.pass_context
 def spfixed(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upload, build_dir, qa, pb):
-    from helper import (
+    from sp_cli.helper import (
         check_paths, 
         sql_query,
         bigquery_to_gdf,
         build_sp_args,
     )
-    from sp_build import build_sp_fixed
+    from sp_cli.sp_build import build_sp_fixed
     
     click.echo("_________________________________________________________")
     logger.info("BUILDING SuperParcel Fixed Epsilon Phase 1")

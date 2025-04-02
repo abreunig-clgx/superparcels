@@ -1,7 +1,6 @@
 from typing import List
 import numpy as np
 import logging
-import multiprocessing
 
 logger = logging.getLogger(__name__)
 
