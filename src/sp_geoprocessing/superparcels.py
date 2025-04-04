@@ -1,4 +1,5 @@
 import numpy as np
+import geopandas as gpd
 from shapely.geometry import Polygon
 import hashlib
 import logging
@@ -82,4 +83,48 @@ def hash_puids(puid_list):
     joined = '-'.join([str(puid) for puid in puid_list])
     return hashlib.sha256(joined.encode()).hexdigest()[:10]
 
+
+def remove_overlap(gdf):
+    sindex = gdf.sindex
+    result = []
+
+    for idx, row in gdf.iterrows():
+        geom = row.geometry
+        possible_matches_index = list(sindex.intersection(geom.bounds)) # possible matches
+        for other_idx in possible_matches_index:
+            if other_idx != idx: # Avoid self-intersection
+                other_geom = gdf.loc[other_idx].geometry # get the geometry of the other polygon
+                if geom.intersects(other_geom) and geom.area >= other_geom.area:
+                    geom = geom.difference(other_geom)
+        if not geom.is_empty:
+            new_row = row.copy()
+            new_row.geometry = geom
+            result.append(new_row)
+
+    gdf_cleaned = gpd.GeoDataFrame(result, crs=gdf.crs)
+    return gdf_cleaned
+
+def remove_invalid_geoms(gdf, geom_type=['Polygon', 'MultiPolygon']):
+    """
+    Remove invalid geometries from a GeoDataFrame based on allowed geometry types.
+
+    The function first explodes the GeoDataFrame to ensure all multi-part geometries are split into
+    individual parts. It then identifies rows where the geometry type is not in the provided list
+    (`geom_type`). It returns two GeoDataFrames: one with valid geometries and one with invalid geometries.
+
+    Args:
+        gdf (geopandas.GeoDataFrame): A GeoDataFrame containing geometries to be validated.
+        geom_type (list, optional): List of allowed geometry types (default is ['Polygon', 'MultiPolygon']).
+
+    Returns:
+        tuple:
+            - geopandas.GeoDataFrame: A GeoDataFrame with valid geometries.
+            - geopandas.GeoDataFrame: A GeoDataFrame with invalid geometries, including selected columns.
+    """
+
+    invalid_geoms = gdf[gdf['geometry'].geom_type.isin(geom_type) == False]
+
+    clean_gdf = gdf[~gdf.index.isin(invalid_geoms.index)]
+
+    return clean_gdf, invalid_geoms
 

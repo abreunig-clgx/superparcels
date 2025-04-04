@@ -6,7 +6,12 @@ warnings.filterwarnings('ignore')
 import logging
 
 from sp_geoprocessing.cluster import build_owner_clusters
-from sp_geoprocessing.superparcels import build_superparcels, hash_puids
+from sp_geoprocessing.superparcels import (
+    build_superparcels,
+    hash_puids, 
+    remove_overlap,
+    remove_invalid_geoms
+)
 from sp_geoprocessing.utils import (
     add_attributes,
     remove_from_df,
@@ -136,6 +141,11 @@ def build_sp_fixed(
     super_parcels['sp_area'] = super_parcels['sp_area'].astype(int)
     super_parcels['p_area'] = super_parcels['p_area'].astype(int)
 
+    # REMOVE OVERLAPS
+    super_parcels = remove_overlap(super_parcels)
+
+    # REMOVE INVALID GEOMETRIES
+    super_parcels = remove_invalid_geoms(super_parcels)
     # FINAL TABLE
     super_parcels = (
         super_parcels[['fips', 'sp_id', 'cluster_ID', key_field, 'pcount', 'area_ratio', 'p_area', 'sp_area', 'cbi', 'geometry']]

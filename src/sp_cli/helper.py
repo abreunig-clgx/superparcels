@@ -462,7 +462,7 @@ def process_result(result, meta):
     if meta['at']:
         fn = build_filename('spfixed', '-', f"dt{meta['dt']}", f"ss{meta['ss']}", f"at{meta['at']}")
     else:
-        fn = build_filename('spfixed', '-', f"dt{meta['dt']}", f"ss{meta['ss']}")
+        fn = build_filename('spfixed', '-', f"dt{meta['dt']}", f"ss{meta['ss']}", "nooverlap")
 
     # Upload to BigQuery if enabled
     if meta['bq_upload']:
