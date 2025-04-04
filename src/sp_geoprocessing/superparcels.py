@@ -125,6 +125,8 @@ def remove_invalid_geoms(gdf, geom_type=['Polygon', 'MultiPolygon']):
     invalid_geoms = gdf[gdf['geometry'].geom_type.isin(geom_type) == False]
 
     clean_gdf = gdf[~gdf.index.isin(invalid_geoms.index)]
+    logger.info(f'Invalid geometries removed: {len(invalid_geoms)}')
+    logger.info(f'Valid geometries remaining: {len(clean_gdf)}')
 
     return clean_gdf, invalid_geoms
 

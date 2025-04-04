@@ -142,10 +142,14 @@ def build_sp_fixed(
     super_parcels['p_area'] = super_parcels['p_area'].astype(int)
 
     # REMOVE OVERLAPS
+    logger.info('Removing overlaps...')
     super_parcels = remove_overlap(super_parcels)
 
     # REMOVE INVALID GEOMETRIES
-    super_parcels = remove_invalid_geoms(super_parcels)
+    logger.info(f'Shape before removing invalid geometries: {super_parcels.shape}')
+    logger.info('Removing invalid geometries...')
+    super_parcels, invalid_geoms = remove_invalid_geoms(super_parcels)
+    logger.info(f'Shape after removing invalid geometries: {super_parcels.shape}')
     # FINAL TABLE
     super_parcels = (
         super_parcels[['fips', 'sp_id', 'cluster_ID', key_field, 'pcount', 'area_ratio', 'p_area', 'sp_area', 'cbi', 'geometry']]
