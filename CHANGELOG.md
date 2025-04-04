@@ -1,3 +1,11 @@
+## v0.2.0 - 2025-04-04
+
+- Bump version to 0.2.0
+- overlap validated; bq testing inprogress
+- update remove overlap and testing local
+- remove overlap mre
+- Update changelog for v0.1.7
+
 ## v0.1.7 - 2025-04-02
 
 - Bump version to 0.1.7
