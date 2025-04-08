@@ -14,10 +14,10 @@ RUN pip install -e .
 # RUN apt-get update && apt-get install -y gdal-bin libgdal-dev
 
 # Add your GCP service account key (replace with your actual path)
-COPY src/clgx-gis-app-dev-06e3-a94b39eeec37.json /app/keys/clgx-gis-app-dev-06e3-a94b39eeec37.json
+COPY src/keys/df_key/clgx-gis-app-dev-06e3-abdbc02fa88b.json /app/keys/clgx-gis-app-dev-06e3-abdbc02fa88b.json
 
 # Set environment variable for GCP auth
-ENV GOOGLE_APPLICATION_CREDENTIALS="/app/keys/clgx-gis-app-dev-06e3-a94b39eeec37.json"
+ENV GOOGLE_APPLICATION_CREDENTIALS="/app/keys/clgx-gis-app-dev-06e3-abdbc02fa88b.json"
 
 # Create build root dir (optional but helpful)
 RUN mkdir -p /app/tmp

@@ -30,19 +30,19 @@ class RunSuperparcelCLI(beam.DoFn):
 def run():
     options = PipelineOptions(
         runner='DataflowRunner',
-        project='your-gcp-project',
+        project='clgx-gis-app-dev-06e3',
         region='us-central1',
-        temp_location='gs://your-bucket/temp',
-        sdk_container_image='gcr.io/your-project/superparcel-df',
+        temp_location='gs://geospatial-team/abreunig/temp',
+        sdk_container_image='gcr.io/clgx-gis-app-dev-06e3/superparcel-df',
         experiments=['use_runner_v2'],
     )
 
     with beam.Pipeline(options=options) as p:
         (
             p
-            | "County FIPS list" >> beam.Create(["01001", "01003"])
+            | "County FIPS list" >> beam.Create(['06075', '16001'])
             | "Run CLI" >> beam.ParDo(RunSuperparcelCLI(
-                gcp_key_path="/app/keys/service-account.json"
+                gcp_key_path="/app/keys/clgx-gis-app-dev-06e3-abdbc02fa88b.json"
             ))
         )
 
