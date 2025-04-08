@@ -80,3 +80,21 @@ def get_owner_counts(df, group_field):
 def add_field(df, field, value):
     df[field] = value
     return df
+
+def dt_area_ratio(data_dir, fips, dt_values, area_field):
+    all_dfs = pd.DataFrame()
+   
+    for dt in dt_values:
+        shp_path = glob.glob(os.path.join(data_dir, f'*dt{dt}*{fips}*.shp'))
+        try:
+            df = gpd.read_file(shp_path[0])[['fips', area_field]]
+            df['dt'] = dt
+            # set values inarea_field to 1 if above 1
+            df[area_field] = df[area_field].where(df[area_field] <= 1, 1)
+            all_dfs = pd.concat([all_dfs, df], ignore_index=True)
+        except IndexError:
+            raise ValueError(f'No shapefile found for {fips} with dt {dt}')
+
+    return all_dfs
+        
+        

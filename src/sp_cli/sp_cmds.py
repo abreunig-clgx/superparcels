@@ -272,7 +272,7 @@ def spfixed(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq
 )
 @click.pass_context
 def dt_analysis(ctx):
-    from sp_geoprocessing.analysis import dt_owner_counts, dt_overlap
+    from sp_geoprocessing.analysis import dt_owner_counts, dt_overlap, dt_area_ratio
     
     click.echo("-")
     click.echo("-")
@@ -291,9 +291,11 @@ def dt_analysis(ctx):
     
     shp_dir = config.get("OUTPUT_DIR")
     fips_list = config.get("FIPS_LIST")
+    output_dir = config.get("ANALYSIS_DIR")
 
     all_owner_counts = pd.DataFrame()
     all_dt_overlaps = pd.DataFrame()
+    all_dt_area_ratios = pd.DataFrame()
     for fips in fips_list:
         logger.info(f'Processing FIPS: {fips}...')
         try:
@@ -332,11 +334,22 @@ def dt_analysis(ctx):
         )
         all_dt_overlaps = pd.concat([all_dt_overlaps, dt_overlaps], axis=0)
 
+        # run area ratio analysis
+        dt_area_ratio = dt_area_ratio(
+            data_dir=shp_dir,
+            fips_list=fips_list,
+            dt_values=dt_names,
+            area_field='area_ratio'
+        )
+        all_dt_area_ratios = pd.concat([all_dt_area_ratios, dt_area_ratio], ignore_index=True)
+
     logger.info('Writing files...')
-    owner_count_out_path = os.path.join(shp_dir, 'owner_count_analysis.csv')
-    dt_overlap_out_path = os.path.join(shp_dir, 'dt_overlap_analysis.csv')
+    owner_count_out_path = os.path.join(output_dir, 'owner_count_analysis.csv')
+    dt_overlap_out_path = os.path.join(output_dir, 'dt_overlap_analysis.csv')
+    dt_area_ratio_out_path = os.path.join(output_dir, 'dt_area_ratio_analysis.csv')
     all_owner_counts.to_csv(owner_count_out_path)
     all_dt_overlaps.to_csv(dt_overlap_out_path)
+    all_dt_area_ratios.to_csv(dt_area_ratio_out_path)
 
     click.echo('-')
     click.echo('-')
