@@ -270,8 +270,20 @@ def spfixed(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq
 @click.command(
     help="Build Exploratory Analysis for Distance Thresholds. IN-DEVELOPMENT"
 )
+@click.option('-fips', default=None, multiple=True, type=str,
+              help="FIPS code(s) to build SuperParcel for. Comma-seperated. No Spaces. If not provided, FIPS codes will be pulled from config.json", 
+              callback=parse_to_str_list)
+@click.option('-dt', '--dist-thres', default=None, multiple=True,
+              help="Distance threshold list for comparative analysis. Comma-seperated. No Spaces. Default is None.", callback=parse_to_int_list, required=True)
+@click.option('-pull', '--pull-data', type=click.Choice(['bigquery', 'local']),
+              help="Choices to pull input data from: 'bigquery' or 'local'")
 @click.pass_context
-def dt_analysis(ctx):
+def dt_analysis(ctx, fips, dist_thres, pull_data):
+    from sp_cli.helper import (
+        check_paths, 
+        sql_query,
+        bigquery_to_gdf
+    )
     from sp_geoprocessing.analysis import dt_owner_counts, dt_overlap, dt_area_ratio
     
     click.echo("-")
@@ -293,55 +305,73 @@ def dt_analysis(ctx):
     fips_list = config.get("FIPS_LIST")
     output_dir = config.get("ANALYSIS_DIR")
 
+    version = ctx.obj["VERSION"]
+    json_key = config.get("GCP_JSON")
+
+    if pull_data == 'local':
+        sys.exit("Local data pull not yet implemented.")
+
+
+    if pull_data == 'bigquery':
+        fips = fips or config.get("FIPS_LIST", [])
+        bq_input_dataset = f"{config.get('GCP_PROJECT')}.{config.get('GCP_INPUT_DATASET')}"
+        bq_table_prefix = 'spfixed-ss3-dt'
+
+        all_gdfs = gpd.GeoDataFrame()
+        for dt in dist_thres:
+            bq_input_path = bq_input_dataset + '.' + bq_table_prefix + str(dt)
+
+            # CANDIDATE SQL QUERY
+            query = sql_query(
+                path=bq_input_path,
+                fips_list=fips
+            )
+            logger.debug(f"SQL Query: {query}")
+
+            try:
+                gdf = bigquery_to_gdf(
+                    json_key=json_key,
+                    sql_query=query
+                )
+                gdf['dt'] = dt
+
+                all_gdfs = pd.concat([all_gdfs, gdf], ignore_index=True)
+            except Exception as e:
+                raise logger.error(f"Failed to pull data from BigQuery: {e}")
+        
     all_owner_counts = pd.DataFrame()
     all_dt_overlaps = pd.DataFrame()
     all_dt_area_ratios = pd.DataFrame()
-    for fips in fips_list:
+    for fips in all_gdfs['fips'].unique():
+        filter_gdf = all_gdfs[all_gdfs['fips'] == fips] 
         logger.info(f'Processing FIPS: {fips}...')
-        try:
-            all_dts = glob.glob(os.path.join(shp_dir, fips, '*.shp'), recursive=True)
-        except:
-            raise ValueError('No shapefiles found in the specified directory')
-            
-
-
-        # extract distance thresholds from filenames
-        dt_names = []
-        for dt in all_dts:
-            dt_name = os.path.basename(dt).split('-')[-1].split('.')[0].split('dt')[-1]
-            # sort by distance threshold
-            dt_names.append(int(dt_name))
-        dt_names.sort()
-
+        
 
         # run owner counts for each distance threshold
         logger.info('Running owner counts...')
         owner_counts = dt_owner_counts(
-            data_dir=shp_dir, 
-            fips=fips,
-            dt_values=dt_names, 
+            gdf=filter_gdf, 
             group_field='owner'
         )
         all_owner_counts = pd.concat([all_owner_counts, owner_counts], axis=0)
         
         # run overlap analysis for each distance threshold
+        logger.info('Running overlap analysis...')
         dt_overlaps = dt_overlap(
-            data_dir=shp_dir,
-            fips=fips,
-            dt_values=dt_names,
+            gdf=filter_gdf,
             sp_id_field='sp_id',
             owner_field='owner'
         )
         all_dt_overlaps = pd.concat([all_dt_overlaps, dt_overlaps], axis=0)
 
         # run area ratio analysis
-        dt_area_ratio = dt_area_ratio(
-            data_dir=shp_dir,
-            fips_list=fips_list,
-            dt_values=dt_names,
+        logger.info('Running area ratio analysis...')
+        dt_area_ratio_df = dt_area_ratio(
+            gdf=filter_gdf,
             area_field='area_ratio'
         )
-        all_dt_area_ratios = pd.concat([all_dt_area_ratios, dt_area_ratio], ignore_index=True)
+        #logger.debug(f'Area Ratio DataFrame: {dt_area_ratio_df.head(1)}')
+        all_dt_area_ratios = pd.concat([all_dt_area_ratios, dt_area_ratio_df], ignore_index=True)
 
     logger.info('Writing files...')
     owner_count_out_path = os.path.join(output_dir, 'owner_count_analysis.csv')

@@ -4,23 +4,32 @@ import geopandas as gpd
 import pandas as pd
 import numpy as np
 import logging
+from sp_geoprocessing.superparcels import remove_invalid_geoms
 
 logger = logging.getLogger(__name__)
 
-def dt_overlap(data_dir, fips, dt_values, sp_id_field, owner_field):
-
+def dt_overlap(gdf, sp_id_field, owner_field):
     all_dt_dfs = pd.DataFrame()
-    for dt_value in dt_values:
-        logger.info(f'Processing {dt_value} for {fips}')
-        shp = find_shapefile(os.path.join(data_dir, fips), f'*dt{dt_value}*.shp')
-        gdf = gpd.read_file(shp).reset_index()
+    fips = gdf['fips'].unique()[0]
+    for dt_value in gdf['dt'].unique():
+        gdf_dt = gdf[gdf['dt'] == dt_value].reset_index()
+        logger.info(f'Overlaps from dt-{dt_value} for {fips}')
         
-        sjoin = gpd.sjoin(gdf, gdf, how='left', predicate='overlaps')
+        gdf_dt, _ = remove_invalid_geoms(gdf_dt)
+        # remove invlaid geometries
+        gdf_dt = gdf_dt[gdf_dt['geometry'].notnull()]
+        gdf_dt_cleaned = gdf_dt[gdf_dt['geometry'].is_valid].copy()
+        gdf_dt_cleaned['geometry'] = gdf_dt_cleaned['geometry'].buffer(0)
+        try:
+            sjoin = gpd.sjoin(gdf_dt_cleaned, gdf_dt_cleaned, how='left', predicate='overlaps')
+        except Exception as e:
+            logger.error(f"Spatial join failed: {e}")
+            continue
         mismatch = sjoin[sjoin[owner_field+'_left'] != sjoin[owner_field+'_right']]
         mismatch = mismatch[mismatch['owner_right'].notnull()]
         mismatch = mismatch[['index_left', sp_id_field+'_left', owner_field+'_left', 'index_right', owner_field+'_right', 'geometry']]
 
-        sjoin_right = pd.merge(mismatch, gdf[['index', owner_field, 'geometry']], left_on='index_right', right_on='index', how='inner')
+        sjoin_right = pd.merge(mismatch, gdf_dt_cleaned[['index', owner_field, 'geometry']], left_on='index_right', right_on='index', how='inner')
         
         sjoin_right['diff_area'] = sjoin_right.apply(
             lambda x: x['geometry_x'].intersection(x['geometry_y']).area if x['geometry_x'].is_valid and x['geometry_y'].is_valid else np.nan, axis=1)
@@ -31,8 +40,8 @@ def dt_overlap(data_dir, fips, dt_values, sp_id_field, owner_field):
 
         data_dict = {
             f'{dt_value}_overlaps': groupby_counts.sum(),
-            f'{dt_value}_sp_count': len(gdf),
-            f'{dt_value}_pct_overlap': groupby_counts.sum() / len(gdf) * 100,
+            f'{dt_value}_sp_count': len(gdf_dt_cleaned),
+            f'{dt_value}_pct_overlap': groupby_counts.sum() / len(gdf_dt_cleaned) * 100,
             f'{dt_value}_avg_overlap': groupby_counts.mean()
         }
 
@@ -44,16 +53,15 @@ def dt_overlap(data_dir, fips, dt_values, sp_id_field, owner_field):
     return all_dt_dfs
 
 # Define the main processing function
-def dt_owner_counts(data_dir, fips, dt_values, group_field):
+def dt_owner_counts(gdf, group_field):
     all_owner_counts = pd.DataFrame()
-
-    for dt_value in dt_values:
-        shp = find_shapefile(os.path.join(data_dir, fips), f'*dt{dt_value}*.shp')
-       
-        gdf = gpd.read_file(shp)
+    fips = gdf['fips'].unique()[0]
+    for dt_value in gdf['dt'].unique():
+        logger.info(f'Owner Counts from dt-{dt_value} for {fips}')
+        gdf_dt = gdf[gdf['dt'] == dt_value]
 
         owner_counts = get_owner_counts(
-            gdf, 
+            gdf_dt, 
             group_field=group_field
         )
         data = {
@@ -81,20 +89,9 @@ def add_field(df, field, value):
     df[field] = value
     return df
 
-def dt_area_ratio(data_dir, fips, dt_values, area_field):
-    all_dfs = pd.DataFrame()
-   
-    for dt in dt_values:
-        shp_path = glob.glob(os.path.join(data_dir, f'*dt{dt}*{fips}*.shp'))
-        try:
-            df = gpd.read_file(shp_path[0])[['fips', area_field]]
-            df['dt'] = dt
-            # set values inarea_field to 1 if above 1
-            df[area_field] = df[area_field].where(df[area_field] <= 1, 1)
-            all_dfs = pd.concat([all_dfs, df], ignore_index=True)
-        except IndexError:
-            raise ValueError(f'No shapefile found for {fips} with dt {dt}')
+def dt_area_ratio(gdf, area_field):
 
-    return all_dfs
+    gdf = gdf[gdf[area_field] <= 1]
+    return gdf
         
         
