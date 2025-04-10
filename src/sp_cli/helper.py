@@ -268,7 +268,92 @@ def shp_conversion(df, crs='EPSG:4326', where=None):
 
     return gdf
 
-def build_sp_args(
+def build_spmulti_args(
+    candidate_gdf: gpd.GeoDataFrame,
+    fips_field: str,
+    dist_thres: List[Union[int, float]],
+    owner_field: str,
+    sample_size: int,
+    area_threshold: float,
+    timestamp: str,
+    version: str,
+    bq_output_dir: str,
+    local_output_dir: str,
+    bq_upload: bool,
+    local_upload: bool,
+    json_key: str,
+) -> List[Tuple]:
+    
+    
+    """
+    Builds a list of argument tuples for clustering superparcels by FIPS and distance thresholds.
+
+    Parameters
+    ----------
+    candidate_gdf : gpd.GeoDataFrame
+        The full set of candidate parcels.
+    fips_field : str
+        The name of the column containing FIPS codes.
+    dist_thres : list of float
+        A list of distance thresholds to test.
+    owner_field : str
+        The field used to identify ownership.
+    sample_size : int
+        Sample size for subsampling parcels (if applicable).
+    area_threshold : float
+        Minimum area to consider.
+    timestamp : str
+        Timestamp for the output files.
+    version : str
+        The version of the code.
+    bq_output_dir : str 
+        The BigQuery table prefix for output.
+    local_output_dir : str
+        The local directory for output.
+    bq_upload : bool
+        If True, upload to BigQuery.
+    local_upload : bool
+        If True, save locally.
+    json_key : str
+        Path to the JSON key file for BigQuery authentication.
+
+
+    Returns
+    -------
+    List[Tuple]
+        A list of argument tuples for processing.
+    """
+
+    fips_to_process = candidate_gdf[fips_field].unique()
+    logger.info(f"FIPS in table: {fips_to_process}")
+    sp_args = []
+
+    # sort dist thres from largest to smallest
+    dist_thres = sorted(dist_thres, reverse=True)
+
+    for county_fips in fips_to_process:
+        logger.info(f"Collecting FIPS: {county_fips} with multi-step distances {dist_thres}")
+        fips_gdf = candidate_gdf[candidate_gdf[fips_field] == county_fips]
+
+        sp_args.append((
+            fips_gdf,
+            county_fips,
+            owner_field,
+            dist_thres,
+            sample_size,
+            area_threshold,
+            timestamp,
+            version,
+            bq_output_dir,
+            local_output_dir,
+            bq_upload,
+            local_upload,
+            json_key
+        ))
+
+    return sp_args
+
+def build_spfixed_args(
     candidate_gdf: gpd.GeoDataFrame,
     fips_field: str,
     dist_thres: List[Union[int, float]],
@@ -409,12 +494,12 @@ def create_batches(arg_tuples, batch_size):
     for i in range(0, len(arg_tuples), batch_size):
         yield arg_tuples[i:i + batch_size]
 
-def parse_sp_fixed_args(task_tuple):
+def parse_sp_args(task_tuple):
     """
     Parses a tuple of arguments for the build_sp_fixed function.
     Returns the parsed arguments as a dictionary.
     """
-    sp_fixed_build_args = task_tuple[:6]  # Extract the first six arguments for the function
+    sp_build_args = task_tuple[:6]  # Extract the first six arguments for the function
 
     meta = {
         'fips': task_tuple[1],
@@ -430,10 +515,10 @@ def parse_sp_fixed_args(task_tuple):
         'json_key': task_tuple[12]
     }
 
-    return sp_fixed_build_args, meta
+    return sp_build_args, meta
 
 
-def process_result(result, meta):
+def process_result(result, meta, name):
     """
     Callback to process each completed task.
     'meta' contains:
@@ -459,10 +544,14 @@ def process_result(result, meta):
     result['version'] = meta['version']
 
     # Build filename based on the parameters
-    if meta['at']:
-        fn = build_filename('spfixed', '-', f"dt{meta['dt']}", f"ss{meta['ss']}", f"at{meta['at']}")
-    else:
-        fn = build_filename('spfixed', '-', f"dt{meta['dt']}", f"ss{meta['ss']}")
+    if name == 'spfixed':
+        if meta['at']:
+            fn = build_filename('spfixed', '-', f"dt{meta['dt']}", f"ss{meta['ss']}", f"at{meta['at']}")
+        else:
+            fn = build_filename('spfixed', '-', f"dt{meta['dt']}", f"ss{meta['ss']}")
+
+    if name == 'spmulti':
+        fn = build_filename('spmulti', '-', f"dt{meta['dt']}", f"ss{meta['ss']}", f"at{meta['at']}")
 
     # Upload to BigQuery if enabled
     if meta['bq_upload']:
@@ -493,21 +582,31 @@ def process_batch(func, batch, pool_size):
     Each task is submitted to a shared pool, and results are processed immediately upon completion.
     """
     # Prepare a list of async results to later ensure all tasks in the batch finish
+    logger.info(f"Processing batch of size {len(batch)} with function {func.__name__}")
+    logger.info(f"Batch: {batch}")
     async_results = []
     
     # Create a process pool limited to the desired number of concurrent jobs
     with multiprocessing.Pool(processes=pool_size) as pool:
         for task in batch:
-            
+            logger.info(f"Processing task: {task}")
             if func.__name__ == 'build_sp_fixed':
-                build_args, meta = parse_sp_fixed_args(task)
+                name = 'spfixed'
+            elif func.__name__ == 'build_sp_multi':
+                name = 'spmulti'
+            else:
+                raise ValueError(f"Function {func.__name__} is not recognized.")
 
+            build_args, meta = parse_sp_args(task)
+            logger.info(f"Parsed arguments: {build_args}")
             # Submit the task asynchronously with a callback that processes the result immediately.
             async_result = pool.apply_async(func, args=build_args,
-                                            callback=lambda res, meta=meta: process_result(res, meta))
+                                            callback=lambda res, meta=meta: process_result(res, meta, name))
+            logger.info(f"Task submitted: {async_result}")
             async_results.append(async_result)
 
         for async_result in async_results:
+            logger.debug(f"Waiting for task {async_result} to finish...")
             async_result.wait()
 
 

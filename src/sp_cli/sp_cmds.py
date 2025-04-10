@@ -135,7 +135,7 @@ def spfixed(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq
         check_paths, 
         sql_query,
         bigquery_to_gdf,
-        build_sp_args,
+        build_spfixed_args,
     )
     from sp_cli.sp_build import build_sp_fixed
     
@@ -233,7 +233,7 @@ def spfixed(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq
     logger.debug(f"FIPS Field: {fips_field}")
 
     # list of tuples for each arg combination
-    sp_args = build_sp_args(
+    sp_args = build_spfixed_args(
         candidate_gdf=candidate_gdf,
         fips_field=fips_field, # arg 1
         owner_field=owner_field, # arg 2
@@ -266,6 +266,167 @@ def spfixed(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq
     
     logger.info("BUILD COMPLETE.")
     click.echo("_________________________________________________________")
+
+@build.command(
+    help="Builds SuperParcel Phase 1 using Multi-Step Eps. Highly recommended to run setup first to create config file."
+)
+@click.option('-fips', default=None, multiple=True, type=str,
+              help="FIPS code(s) to build SuperParcel for. Comma-seperated. No Spaces. If not provided, will build for all FIPS codes found in config.json",
+              callback=parse_to_str_list)
+@click.option('-dt', '--dist-thres', default=None, multiple=True,
+              help="Distance threshold list for Multi-Step clustering. Comma-seperated. No Spaces. Default is 200.", callback=parse_to_int_list)
+@click.option('-ss', '--sample-size', type=int, default=3,
+              help="Minimum number of samples for clustering. Default is 3.")
+@click.option('-at', '--area-threshold', type=float, default=None,
+              help="Area Ratio Threshold for Multi-Step clustering. Values between 0 and 1. Default is 0.5.")
+@click.option('-local', '--local-upload', type=click.BOOL, default=False,
+              help="Saves build to local build directory. Default is False.")
+@click.option('-bq', '--bq-upload', type=click.BOOL, default=True,
+                help="Uploads to BigQueryTable. Default is True.")
+@click.option('-bd', '--build-dir', type=click.Path(), default=None,
+              help="Directory where you want the build to occur. If not provided, will use the build directory from config.json.",
+              required=False)
+@click.option('-qa', is_flag=True, default=False,
+              help="Enables cProfiler. Default is False. NOT YET IMPLEMENTED.")
+@click.option('-pb', type=click.Path(), default=None,
+              help="Path to Place Boundaries Shapefile. FUTURE IMPLEMENTATION")
+@click.pass_context
+def spmulti(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upload, build_dir, qa, pb):
+    from sp_cli.helper import (
+        check_paths, 
+        sql_query,
+        bigquery_to_gdf,
+        build_spmulti_args,
+    )
+    from sp_cli.sp_build import build_sp_multi
+    
+    click.echo("_________________________________________________________")
+    logger.info("BUILDING SuperParcel Fixed Epsilon Phase 1 using Multi-Step Eps")
+    click.echo("-")
+    click.echo("-")
+
+   
+    # Attempt to load configuration from file (if provided via ctx)
+    if os.path.exists(ctx.obj["CONFIG"]):
+        with open(ctx.obj["CONFIG"], "r") as config_file:
+            config = json.load(config_file)
+    else:
+        logger.error('Cannot find config.json!!!')
+        
+    timestamp = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+    version = ctx.obj["VERSION"]
+
+    logger.debug(f"Timestamp: {timestamp}")
+    logger.debug(f"Version: {version}")
+ 
+    # Use user-provided build directory if available; otherwise, fall back to config.
+    bd = build_dir or config.get("BUILD_DIR")
+    if not bd:
+        raise click.ClickException("Build directory must be provided as an argument (-bd) or in the config file.")
+    # Create build directory if it does not exist.
+    os.makedirs(bd, exist_ok=True)
+    check_paths(bd)
+
+    try:
+        fips = fips or config.get("FIPS_LIST", [])
+        input_dir = os.makedirs(os.path.join(bd, "inputs"), exist_ok=True) or config.get("INPUT_DIR")
+        local_output_dir = os.makedirs(os.path.join(bd, "outputs"), exist_ok=True) or config.get("OUTPUT_DIR")
+        logger.debug(f"FIPS List: {fips}")
+    except KeyError:
+        raise click.ClickException("FIPS code(s) must be provided as an argument (-fips) or in the config file.")    
+            
+    bq_input_path = f"{config.get('GCP_PROJECT')}.{config.get('GCP_INPUT_DATASET')}.{config.get('GCP_INPUT_TABLE')}"
+    bq_output_path = f"{config.get('GCP_PROJECT')}.{config.get('GCP_OUTPUT_DATASET')}"
+    json_key = config.get("GCP_JSON")
+
+    logger.debug(f"BigQuery Input Path: {bq_input_path}")
+    logger.debug(f"BigQuery Output Path: {bq_output_path}")
+    logger.debug(f"JSON Key: {json_key}")
+    # Process Place Boundaries if provided (future implementation)
+    if pb:
+        logger.info("Running with Place Boundaries (feature not yet implemented).")
+        # TODO: Implement processing with place boundaries.
+
+
+    # CANDIDATE SQL QUERY
+    query = sql_query(
+        path=bq_input_path,
+        fips_list=fips
+    )
+    logger.debug(f"SQL Query: {query}")
+
+    try:
+        candidate_gdf = bigquery_to_gdf(
+            json_key=json_key,
+            sql_query=query
+        )
+
+        if local_upload: # write input to input_dir
+            input_path = os.path.join(input_dir, 'candidate_input.shp')
+            candidate_gdf.to_file(input_path, driver='ESRI Shapefile')
+    except Exception as e:
+        raise logger.error(f"Failed to pull data from BigQuery: {e}")
+
+
+    # get KEY OWNER & FIPS PUID FIELD
+    owner_field = next((col for col in candidate_gdf.columns if 'owner' in col.lower()), None)
+    fips_field = next((col for col in candidate_gdf.columns if 'fips' in col.lower()), None)
+    puid_field = next((col for col in candidate_gdf.columns if 'puid' in col.lower()), None)
+    logger.debug(f"Owner Field: {owner_field}")
+    logger.debug(f"FIPS Field: {fips_field}")
+    logger.debug(f"PUID Field: {puid_field}")
+    logger.debug(f'PUID dtype: {candidate_gdf[puid_field].dtype}')
+
+    logger.debug(f"Candidate GeoDataFrame Columns: {candidate_gdf.columns}")
+    logger.debug(f"Candidate GeoDataFrame: {candidate_gdf.head(2)}")
+    logger.debug(f"Candidate GeoDataFrame CRS: {candidate_gdf.crs}")
+    logger.debug(f"Candidate GeoDataFrame Length: {len(candidate_gdf)}")
+    
+    if owner_field is None:
+        raise logger.error("No owner field found in the candidate GeoDataFrame.")
+    
+    if fips_field is None:
+        raise logger.error("No FIPS field found in the candidate GeoDataFrame.")
+    
+    logger.debug(f"Owner Field: {owner_field}")
+    logger.debug(f"FIPS Field: {fips_field}")
+
+    # list of tuples for each arg combination
+    sp_args = build_spmulti_args(
+        candidate_gdf=candidate_gdf,
+        fips_field=fips_field, # arg 1
+        owner_field=owner_field, # arg 2
+        dist_thres=dist_thres, # arg 3
+        sample_size=sample_size, # arg 4
+        area_threshold=area_threshold, # arg 5
+        timestamp=timestamp, # arg 6
+        version=version, # arg 7
+        bq_output_dir=bq_output_path, # arg 8
+        local_output_dir=local_output_dir, # arg 9
+        bq_upload=bq_upload, # arg 10
+        local_upload=local_upload, # arg 11
+        json_key=json_key # arg 12
+    )
+
+    logger.debug(f"SP Args Example Tuple: {sp_args[0]}")
+    logger.info(f"Number of SuperParcel Iterations: {len(sp_args)}")
+
+    batch_size = min(len(sp_args), 10)  # Set batch size to 10 or the number of args, whichever is smaller
+    logger.info(f'Running {batch_size} concurrent processes')
+  
+    # RUN SUPERPARCEL BUILD
+    click.echo("-")
+    click.echo("-")
+    logger.info(f'STARTING SUPERPARCEL BUILD')
+    click.echo("-")
+    click.echo("-")
+   
+    process_batch(build_sp_multi, sp_args, pool_size=batch_size)
+
+    
+    logger.info("BUILD COMPLETE.")
+    click.echo("_________________________________________________________")
+
 
 @click.command(
     help="Build Exploratory Analysis for Distance Thresholds. IN-DEVELOPMENT"
