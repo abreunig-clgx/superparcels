@@ -344,6 +344,7 @@ def dt_analysis(ctx, fips, dist_thres, pull_data):
     all_dt_area_ratios = pd.DataFrame()
     for fips in all_gdfs['fips'].unique():
         filter_gdf = all_gdfs[all_gdfs['fips'] == fips] 
+        
         logger.info(f'Processing FIPS: {fips}...')
         
 

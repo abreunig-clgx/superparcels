@@ -9,33 +9,42 @@ from sp_geoprocessing.superparcels import remove_invalid_geoms
 logger = logging.getLogger(__name__)
 
 def dt_overlap(gdf, sp_id_field, owner_field):
+    utm_crs = gdf.estimate_utm_crs().to_epsg()
     all_dt_dfs = pd.DataFrame()
     fips = gdf['fips'].unique()[0]
     for dt_value in gdf['dt'].unique():
         gdf_dt = gdf[gdf['dt'] == dt_value].reset_index()
-        logger.info(f'Overlaps from dt-{dt_value} for {fips}')
+        gdf_dt = gdf_dt.to_crs(utm_crs)
         
+        logger.info(f'Overlaps from dt-{dt_value} for {fips}')
+        print(gdf_dt.columns)
+        print(gdf_dt.shape)
         gdf_dt, _ = remove_invalid_geoms(gdf_dt)
         # remove invlaid geometries
         gdf_dt = gdf_dt[gdf_dt['geometry'].notnull()]
         gdf_dt_cleaned = gdf_dt[gdf_dt['geometry'].is_valid].copy()
         gdf_dt_cleaned['geometry'] = gdf_dt_cleaned['geometry'].buffer(0)
+        
         try:
             sjoin = gpd.sjoin(gdf_dt_cleaned, gdf_dt_cleaned, how='left', predicate='overlaps')
+            print(sjoin.shape)
         except Exception as e:
             logger.error(f"Spatial join failed: {e}")
             continue
         mismatch = sjoin[sjoin[owner_field+'_left'] != sjoin[owner_field+'_right']]
+    
         mismatch = mismatch[mismatch['owner_right'].notnull()]
+     
         mismatch = mismatch[['index_left', sp_id_field+'_left', owner_field+'_left', 'index_right', owner_field+'_right', 'geometry']]
 
         sjoin_right = pd.merge(mismatch, gdf_dt_cleaned[['index', owner_field, 'geometry']], left_on='index_right', right_on='index', how='inner')
-        
+       
         sjoin_right['diff_area'] = sjoin_right.apply(
             lambda x: x['geometry_x'].intersection(x['geometry_y']).area if x['geometry_x'].is_valid and x['geometry_y'].is_valid else np.nan, axis=1)
-
+     
         overlaps = sjoin_right[sjoin_right['diff_area'].notnull()]
         overlaps = sjoin_right[sjoin_right['diff_area'] > 1]
+        print(overlaps.shape)
         groupby_counts = overlaps.groupby('index_left')['index_right'].nunique()
 
         data_dict = {
