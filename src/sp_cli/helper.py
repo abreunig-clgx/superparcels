@@ -551,7 +551,10 @@ def process_result(result, meta, name):
             fn = build_filename('spfixed', '-', f"dt{meta['dt']}", f"ss{meta['ss']}")
 
     if name == 'spmulti':
-        fn = build_filename('spmulti', '-', f"dt{meta['dt']}", f"ss{meta['ss']}", f"at{meta['at']}")
+        at = str(meta['at'])[-1] # get last digit of area threshold
+
+        formatted_dts = '_'.join(map(str, meta['dt']))
+        fn = build_filename('spmulti', '-', f"dt{formatted_dts}", f"ss{meta['ss']}", f"at{at}")
 
     # Upload to BigQuery if enabled
     if meta['bq_upload']:
@@ -589,7 +592,7 @@ def process_batch(func, batch, pool_size):
     # Create a process pool limited to the desired number of concurrent jobs
     with multiprocessing.Pool(processes=pool_size) as pool:
         for task in batch:
-            logger.info(f"Processing task: {task}")
+            
             if func.__name__ == 'build_sp_fixed':
                 name = 'spfixed'
             elif func.__name__ == 'build_sp_multi':
@@ -598,15 +601,12 @@ def process_batch(func, batch, pool_size):
                 raise ValueError(f"Function {func.__name__} is not recognized.")
 
             build_args, meta = parse_sp_args(task)
-            logger.info(f"Parsed arguments: {build_args}")
             # Submit the task asynchronously with a callback that processes the result immediately.
             async_result = pool.apply_async(func, args=build_args,
                                             callback=lambda res, meta=meta: process_result(res, meta, name))
-            logger.info(f"Task submitted: {async_result}")
             async_results.append(async_result)
 
         for async_result in async_results:
-            logger.debug(f"Waiting for task {async_result} to finish...")
             async_result.wait()
 
 

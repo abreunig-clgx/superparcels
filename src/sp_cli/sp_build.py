@@ -1,5 +1,6 @@
 
 import pandas as pd
+import numpy as np
 import geopandas as gpd
 import warnings
 warnings.filterwarnings('ignore')
@@ -188,15 +189,14 @@ def build_sp_multi(
     logger.info(f'Using UTM CRS {utm}...')
     unique_owners = parcels[key_field].unique()
     logger.info(f'Unique owners: {len(unique_owners)}')
-    clustered_parcel_data = gpd.GeoDataFrame() # cluster data
-    logger.ingo(f'Unique owners: {len(unique_owners)}')
-    logger.info(f'Building super parcels for {fips} and dt {distance_threshold}...')
+    logger.info(f'Building super parcels for {fips} and dt {distance_thresholds}...')
    
+    
     all_superparcels = gpd.GeoDataFrame() # all super parcels
-    logger.info(f'Starting Loop..')
     for owner in unique_owners:
         owner_parcels = parcels[parcels[key_field] == owner].copy()
 
+        first_pass_attempted = False
         for eps in distance_thresholds:
             clusters = build_owner_clusters(
                 owner_parcels,
@@ -257,10 +257,19 @@ def build_sp_multi(
             sp['p_area'] = sp['p_area'].astype(int)
             owner_area_ratio = sp['area_ratio'].values[0]
 
-            if sp['area_ratio'].values[0] >= area_threshold:
-                logger.info(f'Adding super parcel using dt {eps} with area ratio {owner_area_ratio}...')
+            if not first_pass_attempted:
+                if owner_area_ratio >= area_threshold:
+
+                   
+                    all_superparcels = pd.concat([all_superparcels, sp], ignore_index=True)
+                    break
+                else:
+                    first_pass_attempted = True
+            else:
+                # collect any second pass eps
                 all_superparcels = pd.concat([all_superparcels, sp], ignore_index=True)
                 break
+           
 
     if len(all_superparcels) == 0:
         return None
@@ -270,7 +279,7 @@ def build_sp_multi(
     # REMOVE INVALID GEOMETRIESc
     logger.info(f'Shape before removing invalid geometries: {all_superparcels.shape}')
     logger.info('Removing invalid geometries...')
-    all_superparcels, invalid_geoms = remove_invalid_geoms(all_superparcels)
+    all_superparcels, _ = remove_invalid_geoms(all_superparcels)
     logger.info(f'Shape after removing invalid geometries: {all_superparcels.shape}')
     # FINAL TABLE
     all_superparcels = (

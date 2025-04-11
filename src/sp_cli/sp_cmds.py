@@ -277,7 +277,7 @@ def spfixed(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq
               help="Distance threshold list for Multi-Step clustering. Comma-seperated. No Spaces. Default is 200.", callback=parse_to_int_list)
 @click.option('-ss', '--sample-size', type=int, default=3,
               help="Minimum number of samples for clustering. Default is 3.")
-@click.option('-at', '--area-threshold', type=float, default=None,
+@click.option('-at', '--area-threshold', type=float, default=0.5, required=True,
               help="Area Ratio Threshold for Multi-Step clustering. Values between 0 and 1. Default is 0.5.")
 @click.option('-local', '--local-upload', type=click.BOOL, default=False,
               help="Saves build to local build directory. Default is False.")
@@ -436,14 +436,21 @@ def spmulti(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq
               callback=parse_to_str_list)
 @click.option('-dt', '--dist-thres', default=None, multiple=True,
               help="Distance threshold list for comparative analysis. Comma-seperated. No Spaces. Default is None.", callback=parse_to_int_list, required=True)
+@click.option('-at', '--area-threshold', type=float, default=None,
+                help="Area Ratio Threshold for Multi-Step clustering. Values between 0 and 1. Default is None")
+@click.option('-ss', '--sample-size', type=int, default=3,
+              help="Minimum number of samples for clustering. Default is 3.")
 @click.option('-pull', '--pull-data', type=click.Choice(['bigquery', 'local']),
               help="Choices to pull input data from: 'bigquery' or 'local'")
+@click.option('-bt', '--build-type', type=click.Choice(['spfixed', 'spmulti']),
+              help="Build type to run analysis on: 'spfixed' or 'spmulti'")
 @click.pass_context
-def dt_analysis(ctx, fips, dist_thres, pull_data):
+def dt_analysis(ctx, fips, dist_thres, area_threshold, sample_size, pull_data, build_type):
     from sp_cli.helper import (
         check_paths, 
         sql_query,
-        bigquery_to_gdf
+        bigquery_to_gdf,
+        build_filename
     )
     from sp_geoprocessing.analysis import dt_owner_counts, dt_overlap, dt_area_ratio
     
@@ -476,19 +483,38 @@ def dt_analysis(ctx, fips, dist_thres, pull_data):
     if pull_data == 'bigquery':
         fips = fips or config.get("FIPS_LIST", [])
         bq_input_dataset = f"{config.get('GCP_PROJECT')}.{config.get('GCP_INPUT_DATASET')}"
-        bq_table_prefix = 'spfixed-ss3-dt'
+        
+        if build_type == 'spmulti':
+            dist_thres = sorted(dist_thres, reverse=True)
+            dist_thres = ['_'.join([str(x) for x in dist_thres])]
 
+       
         all_gdfs = gpd.GeoDataFrame()
         for dt in dist_thres:
-            bq_input_path = bq_input_dataset + '.' + bq_table_prefix + str(dt)
+            if build_type == 'spfixed':
+                if area_threshold:
+                    bq_table_name = build_filename('spfixed', '-', f"dt", f"ss{sample_size}", f"at{area_threshold}")
+                else:
+                    bq_table_name = build_filename('spfixed', '-', f"dt", f"ss{sample_size}")
 
+                bq_input_path = bq_input_dataset + '.' + bq_table_name + str(dt)
+
+            if build_type == 'spmulti':
+                at = str(area_threshold)[-1] # get last digit of area threshold
+                bq_table_name = build_filename('spmulti', '-', f"dt{dt}", f"ss{sample_size}", f"at{at}")
+            
+                bq_input_path = bq_input_dataset + '.' + bq_table_name
+
+
+            click.echo(f"Pulling data from BigQuery: {bq_input_path}")
+          
             # CANDIDATE SQL QUERY
             query = sql_query(
                 path=bq_input_path,
                 fips_list=fips
             )
-            logger.debug(f"SQL Query: {query}")
-
+            logger.info(f"SQL Query: {query}")
+           
             try:
                 gdf = bigquery_to_gdf(
                     json_key=json_key,

@@ -21,12 +21,12 @@ def build_superparcels(df, buffer, dissolve_by='cluster_ID', area_threshold=None
     #sp['max_mitre'] = sp[dissolve_by].map(mitre_max.set_index(dissolve_by)['mitre'])
     
     #cross-boundary indicator
-    logger.info('Calculating cross-boundary indicator...')
+    #logger.info('Calculating cross-boundary indicator...')
     sp['cbi'] = sp['geometry'].apply(lambda x: 1 if x.geom_type == 'MultiPolygon' else 0)
 
     
 
-    logger.info('Applying buffer...')
+    #logger.info('Applying buffer...')
     sp['geometry'] = sp.apply(lambda x: x.geometry.buffer(buffer), axis=1)
     sp['geometry'] = sp.apply(lambda x: x.geometry.buffer(-buffer), axis=1)
     
