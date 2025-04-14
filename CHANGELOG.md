@@ -1,3 +1,22 @@
+## v0.3.0 - 2025-04-14
+
+- Bump version to 0.3.0
+- doc strings to modules
+- test run and validation to carto on multistep eps
+- multi step mre and drafting integration
+- overlap check fixed; mre on multistep eps
+- dble check overlap analysis code
+- first draft of analysis area_ratio func
+- Update changelog for v0.2.0
+
+## v0.2.0 - 2025-04-04
+
+- Bump version to 0.2.0
+- overlap validated; bq testing inprogress
+- update remove overlap and testing local
+- remove overlap mre
+- Update changelog for v0.1.7
+
 ## v0.1.7 - 2025-04-02
 
 - Bump version to 0.1.7
