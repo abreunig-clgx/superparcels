@@ -1,6 +1,8 @@
 import numpy as np
 from sklearn.cluster import DBSCAN, KMeans
 from shapely.ops import nearest_points
+import networkx as nx
+from shapely.strtree import STRtree
 import logging
 
 logger = logging.getLogger(__name__)
@@ -155,6 +157,57 @@ def build_dbscan_clusters(dmatrix, min_samples, eps):
     dbscan = DBSCAN(eps=eps, min_samples=min_samples, metric='precomputed')
     return dbscan.fit_predict(dmatrix)
 
+""" Sindex Optimization for Clustering """
+def build_sindex_owner_clusters(df, sample_size, threshold):
+    df = df.reset_index(drop=True)
+    polygons = list(df.geometry)
+    n = len(polygons)
+    
+    # Build a mapping from geometry identity to index for quick lookup.
+    idx_map = {idx: poly for idx, poly in enumerate(polygons)}
+    
+    # Build an STRtree for all the polygons.
+    tree = STRtree(polygons)
+
+    # Initialize a graph where each node represents a polygon.
+    G = nx.Graph()
+    G.add_nodes_from(range(n))
+
+    # For each polygon, query candidates using a buffered envelope.
+    for i, poly in enumerate(polygons):
+       
+        # Expand the polygon’s envelope by the threshold to get candidate neighbors.
+        candidates = tree.query(poly.buffer(threshold), predicate='intersects',)
+        # drop self-matches
+        #candidates = [c[0] for c in candidates if c[0] != i]
+        if len(candidates) < sample_size + 1:
+            continue 
+     
+        for candidate_id in candidates:
+            # Only consider each pair once.
+            if i < candidate_id:
+                # Compute the actual distance.
+                d = poly.distance(idx_map[candidate_id])
+                if d <= threshold:
+                    G.add_edge(int(i), int(candidate_id))
+                
+    # Extract clusters as connected components of the graph.
+    clusters = [list(component) for component in nx.connected_components(G) if len(component) > 1]
+    
+    if len(clusters) == 0:
+        return None
+    
+    cluster_map = {}
+    for cluster_id, cluster in enumerate(clusters):
+        for idx in cluster:
+            cluster_map[idx] = int(cluster_id)
+    
+    df['cluster'] = df.index.map(cluster_map)
+
+    # drop -1 clusters
+    df = df[df['cluster'].notnull()]
+
+    return df
 
 """ Functions for KMeans clustering """
 

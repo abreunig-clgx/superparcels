@@ -748,7 +748,7 @@ def process_result(result, meta, name):
         else:
             fn = build_filename('spfixed', '-', f"dt{meta['dt']}", f"ss{meta['ss']}")
 
-    if name == 'spmulti':
+    if name.startswith('spmulti'):
         at = str(meta['at'])[-1]  # get last digit of area threshold
         formatted_dts = '_'.join(map(str, meta['dt']))
         fn = build_filename('spmulti', '-', f"dt{formatted_dts}", f"ss{meta['ss']}", f"at{at}")
@@ -798,7 +798,7 @@ def process_batch(func, batch, pool_size):
         for task in batch:
             if func.__name__ == 'build_sp_fixed':
                 name = 'spfixed'
-            elif func.__name__ == 'build_sp_multi':
+            elif func.__name__.startswith('build_sp_multi'):
                 name = 'spmulti'
             else:
                 raise ValueError(f"Function {func.__name__} is not recognized.")
