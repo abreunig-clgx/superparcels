@@ -131,7 +131,12 @@ def build_owner_clusters(df, min_samples, eps):
     if distance_matrix.shape[0] < 3:
         return np.array([])  # No clustering
     else:
-        return build_dbscan_clusters(distance_matrix, min_samples, eps)
+        labels = build_dbscan_clusters(distance_matrix, min_samples, eps)
+
+    # Assign cluster labels to the GeoDataFrame
+    df['cluster'] = labels
+    df = df[df['cluster'] != -1]  # Drop noise points
+    return df
 
 
 def build_dbscan_clusters(dmatrix, min_samples, eps):
@@ -176,11 +181,12 @@ def build_sindex_owner_clusters(df, sample_size, threshold):
     # For each polygon, query candidates using a buffered envelope.
     for i, poly in enumerate(polygons):
        
+        search_box = poly.envelope.buffer(threshold)
         # Expand the polygon’s envelope by the threshold to get candidate neighbors.
-        candidates = tree.query(poly.buffer(threshold), predicate='intersects',)
+        candidates = tree.query(search_box, predicate='intersects',)
         # drop self-matches
-        #candidates = [c[0] for c in candidates if c[0] != i]
-        if len(candidates) < sample_size + 1:
+        candidates = [int(c) for c in candidates if c != i]
+        if len(candidates) + 1 < sample_size:
             continue 
      
         for candidate_id in candidates:
@@ -208,6 +214,63 @@ def build_sindex_owner_clusters(df, sample_size, threshold):
     df = df[df['cluster'].notnull()]
 
     return df
+
+
+
+def spatial_dbscan(df, sample_size, threshold):
+    df = df.reset_index(drop=True)
+    polygons = list(df.geometry)
+    n = len(polygons)
+
+    tree = STRtree(polygons)
+    labels = np.full(n, -1)  # Start with -1 (noise)
+    visited = np.zeros(n, dtype=bool)
+    cluster_id = 0
+
+    idx_map = {idx: poly for idx, poly in enumerate(polygons)}
+
+    def region_query(i):
+        # Use STRtree to get candidate neighbors
+        search_box = polygons[i].envelope.buffer(threshold)
+        candidates = tree.query(search_box, predicate='intersects')
+        # Filter by true distance
+        neighbors = [
+            c for c in candidates 
+            if polygons[i].distance(idx_map[c]) <= threshold
+        ]
+        return neighbors
+
+    for i in range(n):
+        if visited[i]:
+            continue
+        visited[i] = True
+        neighbors = region_query(i)
+
+        if len(neighbors) < sample_size:
+            labels[i] = -1  # noise
+        else:
+            labels[i] = cluster_id
+            seeds = neighbors.copy()
+            seeds.remove(i) if i in seeds else None
+            while seeds:
+                j = seeds.pop()
+                if not visited[j]:
+                    visited[j] = True
+                    j_neighbors = region_query(j)
+                    if len(j_neighbors) >= sample_size:
+                        for k in j_neighbors:
+                            if k not in seeds:
+                                seeds.append(k)
+                if labels[j] == -1:
+                    labels[j] = cluster_id  # turn noise into border
+                if labels[j] == -1 or labels[j] is None:
+                    labels[j] = cluster_id
+            cluster_id += 1
+
+    df['cluster'] = labels
+    df = df[df['cluster'] != -1]  # drop noise
+    return df
+
 
 """ Functions for KMeans clustering """
 

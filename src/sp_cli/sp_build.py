@@ -22,7 +22,7 @@ import warnings
 warnings.filterwarnings('ignore')
 import logging
 
-from sp_geoprocessing.cluster import build_owner_clusters, build_sindex_owner_clusters
+from sp_geoprocessing.cluster import build_owner_clusters, spatial_dbscan
 from sp_geoprocessing.superparcels import (
     build_superparcels,
     hash_puids, 
@@ -432,13 +432,186 @@ def build_sp_multi_optimized(
         sp_second_pass = gpd.GeoDataFrame()  # Container for second pass super parcels
         # Iterate over each provided distance threshold (epsilon)
         for eps in distance_thresholds:
-            if not sp_second_pass.empty:
-                parcels = sp_second_pass.copy()
+            
+            logger.info(f'Clustering parcels for {fips} with threshold: {eps}...')
+            candidate_clusters = (
+                parcels.groupby(key_field)
+                .apply(spatial_dbscan, sample_size=sample_size, threshold=eps)
+                .reset_index(drop=True)
+            )
+
+            # Skip if no clusters were formed
+            if len(candidate_clusters) == 0:
+                logger.info(f'No clusters found for {fips} with threshold: {eps}.')
+                continue
+            
+            candidate_clusters['cluster_ID'] = candidate_clusters[key_field] + '_' + candidate_clusters['cluster'].astype(str)
+            candidate_clusters['cluster_area'] = candidate_clusters['geometry'].area.astype(int)
+
+            total_area = candidate_clusters.groupby('cluster_ID')['cluster_area'].sum()
+            cluster_pcount = candidate_clusters['cluster_ID'].value_counts()
+
+            candidate_clusters = add_attributes(
+                candidate_clusters,
+                pcount=candidate_clusters['cluster_ID'].map(cluster_pcount),
+                p_area=candidate_clusters['cluster_ID'].map(total_area),
+            )
+            candidate_clusters = candidate_clusters[[key_field, 'puid', 'cluster_ID', 'pcount', 'p_area', 'geometry']]
+            
+
+            # Group parcel IDs by cluster for hashing later
+            cluster_puid_gb = candidate_clusters.groupby('cluster_ID')['puid'].apply(list).reset_index()
+
+            # Build super parcels for the current threshold
+            logger.info(f'Building super parcels for {fips} with threshold: {eps}...')
+            
+            sp = build_superparcels(
+                df=candidate_clusters,
+                buffer=eps,
+                dissolve_by='cluster_ID'
+            )
+            # Generate a unique super parcel identifier
+            sp['sp_id'] = cluster_puid_gb['puid'].apply(hash_puids)
+
+            logger.info(f'Generated {sp.shape[0]} super parcels for {fips} with threshold: {eps}.')
+            # Add additional attributes: fips, super parcel area and area ratio
+            sp = add_attributes(
+                sp,
+                fips=fips,
+                sp_area=sp['geometry'].area,
+                area_ratio=np.round(sp['p_area'] / sp['geometry'].area, 1),
+            )
+            
+            sp['sp_area'] = sp['sp_area'].astype(int)
+            sp['p_area'] = sp['p_area'].astype(int)
+            
+
+            # Determine if the first attempt's result is acceptable based on area_threshold
+            if not first_pass_attempted:
+                logger.info('First pass attempted...')
+                sp_first_pass = sp.loc[sp['area_ratio'] >= area_threshold]
+                sp_second_pass = sp.loc[sp['area_ratio'] < area_threshold]
+           
+
+                all_superparcels = pd.concat([all_superparcels, sp_first_pass], ignore_index=True)
+                first_pass_attempted = True 
+
+                if sp_second_pass.empty: # No second pass needed, everything in first pass
+                    logger.info('No second pass needed, all parcels accepted.')
+                    break
+
+                parcels = candidate_clusters.loc[candidate_clusters['cluster_ID'].isin(sp_second_pass['cluster_ID'])]
+                parcels = parcels[['geometry', 'puid', key_field]]
+                logger.info(f'Parcel shape for second pass: {parcels.shape}')
+            
+            else:
+                logger.info('Second pass attempted...')
+                # Collect result from a second pass if necessary
+                all_superparcels = pd.concat([all_superparcels, sp], ignore_index=True)
+                break
+
+        if len(all_superparcels) == 0:
+            logger.info(f'No valid super parcels generated for {fips}.')
+            return None
+
+        # Remove overlapping parcels
+        logger.info('Removing overlaps...')
+        all_superparcels = remove_overlap(all_superparcels)
+        # Remove invalid geometries and log changes
+        logger.info(f'Shape before removing invalid geometries: {all_superparcels.shape}')
+        logger.info('Removing invalid geometries...')
+        all_superparcels, _ = remove_invalid_geoms(all_superparcels)
+        logger.info(f'Shape after removing invalid geometries: {all_superparcels.shape}')
+
+        # Select final desired columns and convert CRS to EPSG:4326
+        all_superparcels = (
+            all_superparcels[['fips', 'sp_id', 'cluster_ID', key_field, 'pcount', 'area_ratio', 'p_area', 'sp_area', 'cbi', 'geometry']]
+            .to_crs(epsg=4326)
+        )
+        logger.info(f'Finished building super parcels for {fips} with thresholds: {distance_thresholds}.')
+        return all_superparcels
+    except Exception as e:
+        logger.error(f'Error building super parcels for {fips}: {e}')
+        return None
+
+
+def build_sp_multi_optimized_og_dbscan(
+    parcels, 
+    fips,
+    key_field='OWNER',
+    distance_thresholds=[200], 
+    sample_size=3,
+    area_threshold=None,
+):
+    """
+    Build super parcels by iterating over multiple distance thresholds.
+
+    This function attempts to cluster candidate parcels for each owner using a list
+    of distance thresholds (epsilons). For each owner, it iterates over the provided thresholds
+    until a clustering result meets a specified area ratio condition (if an area_threshold is set).
+    The steps include:
+      1. Resetting the parcel index and assigning a unique parcel identifier ('puid').
+      2. Estimating and converting the CRS to the appropriate UTM projection.
+      3. For each unique owner, attempting clustering with each distance threshold:
+         - Clustering is done using DBSCAN (via build_owner_clusters).
+         - Outlier clusters are identified and removed.
+         - Cluster-level attributes (parcel count and total area) are calculated.
+         - A composite cluster identifier is formed.
+         - Super parcels are built using a dissolve (buffer) method.
+         - A unique super parcel id (sp_id) is generated by hashing the aggregated parcel identifiers.
+         - Additional attributes including the fips code, super parcel area, and area ratio are added.
+         - If the area ratio from the first attempt meets or exceeds the area_threshold,
+           the clustering result is accepted. Otherwise, a second attempt is permitted.
+      4. Finally, overlapping and invalid geometries are removed, and the resulting GeoDataFrame 
+         is transformed to EPSG:4326.
+
+    Parameters
+    ----------
+    parcels : geopandas.GeoDataFrame
+        The input GeoDataFrame containing candidate parcels. Must include a valid 'geometry' column.
+    fips : str
+        FIPS code identifier for the region or county.
+    key_field : str, optional
+        The column name representing the owner field used for clustering. Default is 'OWNER'.
+    distance_thresholds : list of int, optional
+        A list of DBSCAN epsilon values to attempt for clustering. Default is [200].
+    sample_size : int, optional
+        Minimum number of samples required for DBSCAN clustering. Default is 3.
+    area_threshold : int or None, optional
+        Minimum area ratio threshold used to determine the acceptance of the first clustering attempt.
+        If not met, a second pass using a different threshold is allowed. Default is None.
+
+    Returns
+    -------
+    geopandas.GeoDataFrame or None
+        A GeoDataFrame of super parcels with columns including fips, sp_id, cluster_ID, the owner field,
+        pcount, area_ratio, p_area, sp_area, cbi, and geometry. The data is reprojected to EPSG:4326.
+        If no valid clusters are produced, the function returns None.
+    """
+    try:
+        logger.info('Building super parcels with multiple distance thresholds...')
+        parcels = parcels.reset_index(drop=True)
+        parcels['puid'] = parcels.index
+
+        # Estimate UTM and transform CRS
+        utm = parcels.estimate_utm_crs().to_epsg()
+        parcels = parcels.to_crs(epsg=utm)  
+        logger.info(f'Using UTM CRS {utm}...')
+    
+        all_superparcels = gpd.GeoDataFrame()  # Container for all resulting super parcels
+
+        logger.info('Using area threshold: {}'.format(area_threshold))
+        
+        first_pass_attempted = False
+        sp_second_pass = gpd.GeoDataFrame()  # Container for second pass super parcels
+        # Iterate over each provided distance threshold (epsilon)
+        for eps in distance_thresholds:
+            
             logger.info(f'Clustering parcels for {fips} with threshold: {eps}...')
             logger.info(parcels.shape)
             candidate_clusters = (
                 parcels.groupby(key_field)
-                .apply(build_sindex_owner_clusters, sample_size=sample_size, threshold=eps)
+                .apply(build_owner_clusters, min_samples=sample_size, eps=eps)
                 .reset_index(drop=True)
             )
 
@@ -492,22 +665,26 @@ def build_sp_multi_optimized(
 
             # Determine if the first attempt's result is acceptable based on area_threshold
             if not first_pass_attempted:
-                logger.info('First pass attempt...')
+                logger.info('First pass attempted...')
                 sp_first_pass = sp.loc[sp['area_ratio'] >= area_threshold]
-                logger.info(f'First pass super parcels: {sp_first_pass.shape}')
                 sp_second_pass = sp.loc[sp['area_ratio'] < area_threshold]
-                logger.info(f'Second pass super parcels: {sp_second_pass.shape}')
-                logger.info(f'First pass super parcels: {sp_first_pass.shape}')
+           
+
                 all_superparcels = pd.concat([all_superparcels, sp_first_pass], ignore_index=True)
                 first_pass_attempted = True 
 
                 if sp_second_pass.empty: # No second pass needed, everything in first pass
                     logger.info('No second pass needed, all parcels accepted.')
                     break
+
+                parcels = candidate_clusters.loc[candidate_clusters['cluster_ID'].isin(sp_second_pass['cluster_ID'])]
+                parcels = parcels[['geometry', 'puid', key_field]]
+                logger.info(f'Parcel shape for second pass: {parcels.shape}')
+            
             else:
-                logger.info('Second pass attempt...')
+                logger.info('Second pass attempted...')
                 # Collect result from a second pass if necessary
-                all_superparcels = pd.concat([all_superparcels, sp_second_pass], ignore_index=True)
+                all_superparcels = pd.concat([all_superparcels, sp], ignore_index=True)
                 break
 
         if len(all_superparcels) == 0:

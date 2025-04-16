@@ -748,10 +748,15 @@ def process_result(result, meta, name):
         else:
             fn = build_filename('spfixed', '-', f"dt{meta['dt']}", f"ss{meta['ss']}")
 
-    if name.startswith('spmulti'):
+    #if name == 'spmulti':
+    #    at = str(meta['at'])[-1]  # get last digit of area threshold
+    #    formatted_dts = '_'.join(map(str, meta['dt']))
+    #    fn = build_filename('spmulti', '-', f"dt{formatted_dts}", f"ss{meta['ss']}", f"at{at}")
+
+    if name == 'spmulti_optimized':
         at = str(meta['at'])[-1]  # get last digit of area threshold
         formatted_dts = '_'.join(map(str, meta['dt']))
-        fn = build_filename('spmulti', '-', f"dt{formatted_dts}", f"ss{meta['ss']}", f"at{at}")
+        fn = build_filename('spmulti_opt', '-', f"dt{formatted_dts}", f"ss{meta['ss']}", f"at{at}")
 
     # Upload to BigQuery if enabled
     if meta['bq_upload']:
@@ -790,7 +795,6 @@ def process_batch(func, batch, pool_size):
         None
     """
     logger.info(f"Processing batch of size {len(batch)} with function {func.__name__}")
-    logger.info(f"Batch: {batch}")
     async_results = []
 
     # Create a process pool limited to the desired number of concurrent jobs.
@@ -798,8 +802,10 @@ def process_batch(func, batch, pool_size):
         for task in batch:
             if func.__name__ == 'build_sp_fixed':
                 name = 'spfixed'
-            elif func.__name__.startswith('build_sp_multi'):
-                name = 'spmulti'
+            #elif func.__name__ == 'build_sp_multi':
+            #    name = 'spmulti'
+            elif func.__name__ == 'build_sp_multi_optimized':
+                name = 'spmulti_optimized'
             else:
                 raise ValueError(f"Function {func.__name__} is not recognized.")
 
