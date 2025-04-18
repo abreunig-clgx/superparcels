@@ -217,54 +217,103 @@ def build_sindex_owner_clusters(df, sample_size, threshold):
 
 
 
-def spatial_dbscan(df, sample_size, threshold):
-    df = df.reset_index(drop=True)
-    polygons = list(df.geometry)
-    n = len(polygons)
+def build_sindex_clusters(df, sample_size, threshold):
+    """
+    Perform DBSCAN-style clustering on spatial polygons using a spatial index (STRtree).
 
-    tree = STRtree(polygons)
-    labels = np.full(n, -1)  # Start with -1 (noise)
-    visited = np.zeros(n, dtype=bool)
+    This function clusters polygons that are spatially close to each other based on a fixed
+    distance threshold (`threshold`) and a minimum number of nearby neighbors (`sample_size`).
+    It mimics the behavior of DBSCAN, using spatial queries to efficiently identify and expand
+    clusters, and labeling points as noise when they do not meet density criteria.
+
+    Parameters
+    ----------
+    df : GeoDataFrame
+        A GeoDataFrame containing polygon geometries. It is assumed to be filtered to a specific
+        group (e.g., same owner) prior to being passed to this function.
+    sample_size : int
+        Minimum number of neighbors (including the polygon itself) required to consider a polygon
+        a core point and start forming a cluster.
+    threshold : float
+        Maximum distance (in the same units as the geometry CRS) used to define the neighborhood
+        around each polygon.
+
+    Returns
+    -------
+    GeoDataFrame
+        A GeoDataFrame with an added 'cluster' column indicating the cluster assignment of each polygon.
+        Noise polygons (those not assigned to any cluster) are removed from the returned DataFrame.
+        Cluster labels are integers starting from 0.
+
+    Notes
+    -----
+    - The input GeoDataFrame is reset to have a clean integer index.
+    - Spatial index (`STRtree`) is used to accelerate neighbor queries.
+    - Distance is based on `.distance()` between polygons.
+    - Noise polygons (not part of any cluster) are labeled as `-1` internally and dropped before returning.
+    """
+    df = df.reset_index(drop=True) # reset index to owner specifc df
+    polygons = list(df.geometry) # get polygons
+    num_polys = len(polygons) # get number of polygons
+
+
+    tree = STRtree(polygons) # create spatial index for polygons
+    labels = np.full(num_polys, -1)  # Start with -1 (noise)
+    visited = np.zeros(num_polys, dtype=bool) # Track visited polygons
     cluster_id = 0
 
+    # index map for polygons for reference
     idx_map = {idx: poly for idx, poly in enumerate(polygons)}
 
-    def region_query(i):
-        # Use STRtree to get candidate neighbors
+    def neighborhood_query(i):
+        # Use the envelope + buffer to find niehgbors that intersect
         search_box = polygons[i].envelope.buffer(threshold)
         candidates = tree.query(search_box, predicate='intersects')
-        # Filter by true distance
+        # Filter neighbors based on epsilon distance
         neighbors = [
             c for c in candidates 
             if polygons[i].distance(idx_map[c]) <= threshold
         ]
         return neighbors
 
-    for i in range(n):
-        if visited[i]:
+    # loop through each polygon and find neighbors
+    for poly_id in range(num_polys):
+        if visited[poly_id]: # already visited
             continue
-        visited[i] = True
-        neighbors = region_query(i)
+        visited[poly_id] = True
+        # get neighbors within threshold for poly_id
+        neighbors = neighborhood_query(poly_id)
 
+        # set poly_id to noise if below sample size
         if len(neighbors) < sample_size:
-            labels[i] = -1  # noise
+            labels[poly_id] = -1  # noise
         else:
-            labels[i] = cluster_id
+            labels[poly_id] = cluster_id # give poly_id a cluster label
+            
+            # begin expanding the cluster(seeds) and collect neighbros within threshold
             seeds = neighbors.copy()
-            seeds.remove(i) if i in seeds else None
+
+            # simply removes self-matches
+            seeds.remove(poly_id) if poly_id in seeds else None
+
+            # continue to expand cluster label until no more candidate neighbors
             while seeds:
-                j = seeds.pop()
-                if not visited[j]:
-                    visited[j] = True
-                    j_neighbors = region_query(j)
-                    if len(j_neighbors) >= sample_size:
-                        for k in j_neighbors:
-                            if k not in seeds:
-                                seeds.append(k)
-                if labels[j] == -1:
-                    labels[j] = cluster_id  # turn noise into border
-                if labels[j] == -1 or labels[j] is None:
-                    labels[j] = cluster_id
+                neighbor_idx = seeds.pop() # remove from seeds and return last id
+                if not visited[neighbor_idx]: # first time visiting
+                    visited[neighbor_idx] = True
+                    # get neighbors to the current neighbor
+                    neighbors_to_neighbor = neighborhood_query(neighbor_idx)
+
+                    if len(neighbors_to_neighbor) >= sample_size: # check if meets sample size
+                        for n in neighbors_to_neighbor:
+                            # remove self-matches
+                            if n not in seeds:
+                                seeds.append(n) # append to starting nighbor list
+
+                # check if neighbor is already in a cluster
+                if labels[neighbor_idx] == -1:
+                    labels[neighbor_idx] = cluster_id  # assign current cluster label
+                
             cluster_id += 1
 
     df['cluster'] = labels

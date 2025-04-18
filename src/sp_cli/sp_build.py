@@ -22,7 +22,7 @@ import warnings
 warnings.filterwarnings('ignore')
 import logging
 
-from sp_geoprocessing.cluster import build_owner_clusters, spatial_dbscan
+from sp_geoprocessing.cluster import build_owner_clusters, build_sindex_clusters
 from sp_geoprocessing.superparcels import (
     build_superparcels,
     hash_puids, 
@@ -436,7 +436,7 @@ def build_sp_multi_optimized(
             logger.info(f'Clustering parcels for {fips} with threshold: {eps}...')
             candidate_clusters = (
                 parcels.groupby(key_field)
-                .apply(spatial_dbscan, sample_size=sample_size, threshold=eps)
+                .apply(build_sindex_clusters, sample_size=sample_size, threshold=eps)
                 .reset_index(drop=True)
             )
 

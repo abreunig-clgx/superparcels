@@ -450,8 +450,9 @@ def spmulti(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq
               help="Enables cProfiler. Default is False. NOT YET IMPLEMENTED.")
 @click.option('-pb', type=click.Path(), default=None,
               help="Path to Place Boundaries Shapefile. FUTURE IMPLEMENTATION")
+@click.option('--nationwide', is_flag=True, default=False, help="Run nationwide build.")
 @click.pass_context
-def spmulti_optimal(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upload, build_dir, qa, pb):
+def spmulti_optimal(ctx, fips, dist_thres, sample_size, area_threshold, local_upload, bq_upload, build_dir, qa, pb, nationwide):
     from sp_cli.helper import (
         check_paths, 
         sql_query,
@@ -459,6 +460,7 @@ def spmulti_optimal(ctx, fips, dist_thres, sample_size, area_threshold, local_up
         build_spmulti_args,
     )
     from sp_cli.sp_build import build_sp_multi_optimized
+    import pickle
     
     click.echo("_________________________________________________________")
     logger.info("BUILDING SuperParcel Fixed Epsilon Phase 1 using Multi-Step Eps")
@@ -665,7 +667,7 @@ def dt_analysis(ctx, fips, dist_thres, area_threshold, sample_size, pull_data, b
 
             if build_type == 'spmulti':
                 at = str(area_threshold)[-1] # get last digit of area threshold
-                bq_table_name = build_filename('spmulti', '-', f"dt{dt}", f"ss{sample_size}", f"at{at}")
+                bq_table_name = build_filename('spmulti_opt', '-', f"dt{dt}", f"ss{sample_size}", f"at{at}")
             
                 bq_input_path = bq_input_dataset + '.' + bq_table_name
 
@@ -741,5 +743,170 @@ def dt_analysis(ctx, fips, dist_thres, area_threshold, sample_size, pull_data, b
     click.echo("_________________________________________________________")
 
 
+@click.command(
+    help="""
+    Build superparcel build functions for all
+    counties in the US.
 
-         
+    Example: sps nationwide -f spfixed --kwargs dist_thres=[75,50],sample_size=3,area_threshold=0.5
+    """
+)
+@click.option('-f', '--func', type=click.Choice(['spfixed', 'spmulti', 'spmulti-optimal']),
+              help="Function to run nationwide build for: 'spfixed', 'spmulti', or 'spmulti_optimal'")
+@click.option('--kwargs', multiple=True, callback=parse_key_value, help="Additional keyword arguments to pass to the function.")
+@click.pass_context
+def nationwide(ctx, func, **kwargs):
+    import pickle
+
+    all_fips_list_path = os.path.join(os.path.dirname(__file__), '../data', 'all_fips_list.pkl')
+    with open(os.path.normpath(all_fips_list_path), 'rb') as f:
+        fips_list = pickle.load(f)
+        click.echo(f"Number of FIPS: {len(fips_list)}")
+    click.echo("_________________________________________________________")
+
+
+    if func == 'spfixed':
+        click.echo("Running nationwide build...")
+        # Implement nationwide build logic here
+        pass
+    elif func == 'spmulti':
+        click.echo("Running nationwide build...")
+        # Implement nationwide build logic here
+        pass
+    elif func == 'spmulti-optimal':
+        click.echo(f"Running nationwide build using {func}...")
+        from sp_cli.helper import (
+        check_paths, 
+        sql_query,
+        bigquery_to_gdf,
+        build_spmulti_args,
+        )
+        from sp_cli.sp_build import build_sp_multi_optimized
+        
+
+        # Attempt to load configuration from file (if provided via ctx)
+        if os.path.exists(ctx.obj["CONFIG"]):
+            with open(ctx.obj["CONFIG"], "r") as config_file:
+                config = json.load(config_file)
+        else:
+            logger.error('Cannot find config.json!!!')
+
+        print(kwargs)
+        build_dir = kwargs['kwargs'].get('build_dir', config.get("BUILD_DIR"))
+        input_dir = config.get("INPUT_DIR")
+        local_output_dir = config.get("OUTPUT_DIR")
+        dist_thres = kwargs['kwargs'].get('dist_thres') 
+        dist_thres = [int(x) for x in dist_thres]
+        sample_size = kwargs['kwargs'].get('sample_size') 
+        sample_size = int(sample_size)
+        area_threshold = kwargs['kwargs'].get('area_threshold') 
+        area_threshold = float(area_threshold)
+        local_upload = kwargs['kwargs'].get('local_upload') 
+        bq_upload = kwargs['kwargs'].get('bq_upload') 
+        timestamp = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+        version = ctx.obj["VERSION"]
+        
+        bq_input_path = f"{config.get('GCP_PROJECT')}.{config.get('GCP_INPUT_DATASET')}.{config.get('GCP_INPUT_TABLE')}"
+        bq_output_path = f"{config.get('GCP_PROJECT')}.{config.get('GCP_OUTPUT_DATASET')}"
+        json_key = config.get("GCP_JSON")
+
+        logger.debug(f"BigQuery Input Path: {bq_input_path}")
+        logger.debug(f"BigQuery Output Path: {bq_output_path}")
+        logger.debug(f"JSON Key: {json_key}")
+
+        fip_batches = list(create_batches(fips_list, batch_size=20))
+        logger.info(f"Number of FIPS Batches: {len(fip_batches)}")
+        
+        for fips_batch in fip_batches:
+            click.echo('-')
+            click.echo('-')
+            click.echo('__________________________________________')
+            logger.info(f"Processing FIPS Batch: {fips_batch}")
+            # CANDIDATE SQL QUERY
+            query = sql_query(
+                path=bq_input_path,
+                fips_list=fips_batch
+            )
+            logger.debug(f"SQL Query: {query}")
+
+            try:
+                candidate_gdf = bigquery_to_gdf(
+                    json_key=json_key,
+                    sql_query=query
+                )
+
+                if local_upload: # write input to input_dir
+                    input_path = os.path.join(input_dir, 'candidate_input.shp')
+                    candidate_gdf.to_file(input_path, driver='ESRI Shapefile')
+            except Exception as e:
+                raise logger.error(f"Failed to pull data from BigQuery: {e}")
+
+
+            # get KEY OWNER & FIPS PUID FIELD
+            owner_field = next((col for col in candidate_gdf.columns if 'owner' in col.lower()), None)
+            fips_field = next((col for col in candidate_gdf.columns if 'fips' in col.lower()), None)
+            puid_field = next((col for col in candidate_gdf.columns if 'puid' in col.lower()), None)
+            logger.debug(f"Owner Field: {owner_field}")
+            logger.debug(f"FIPS Field: {fips_field}")
+            logger.debug(f"PUID Field: {puid_field}")
+            logger.debug(f'PUID dtype: {candidate_gdf[puid_field].dtype}')
+
+            logger.debug(f"Candidate GeoDataFrame Columns: {candidate_gdf.columns}")
+            logger.debug(f"Candidate GeoDataFrame: {candidate_gdf.head(2)}")
+            logger.debug(f"Candidate GeoDataFrame CRS: {candidate_gdf.crs}")
+            logger.debug(f"Candidate GeoDataFrame Length: {len(candidate_gdf)}")
+            
+            if owner_field is None:
+                raise logger.error("No owner field found in the candidate GeoDataFrame.")
+            
+            if fips_field is None:
+                raise logger.error("No FIPS field found in the candidate GeoDataFrame.")
+            
+            logger.debug(f"Owner Field: {owner_field}")
+            logger.debug(f"FIPS Field: {fips_field}")
+
+            # list of tuples for each arg combination
+            sp_args = build_spmulti_args(
+                candidate_gdf=candidate_gdf,
+                fips_field=fips_field, # arg 1
+                owner_field=owner_field, # arg 2
+                dist_thres=dist_thres, # arg 3
+                sample_size=sample_size, # arg 4
+                area_threshold=area_threshold, # arg 5
+                timestamp=timestamp, # arg 6
+                version=version, # arg 7
+                bq_output_dir=bq_output_path, # arg 8
+                local_output_dir=local_output_dir, # arg 9
+                bq_upload=bq_upload, # arg 10
+                local_upload=local_upload, # arg 11
+                json_key=json_key # arg 12
+            )
+
+            logger.debug(f"SP Args Example Tuple: {sp_args[0]}")
+            logger.info(f"Number of SuperParcel Iterations: {len(sp_args)}")
+
+            batch_size = min(len(sp_args), 10)  # Set batch size to 10 or the number of args, whichever is smaller
+            logger.info(f'Running {batch_size} concurrent processes')
+        
+            # RUN SUPERPARCEL BUILD
+            click.echo("-")
+            click.echo("-")
+            logger.info(f'STARTING SUPERPARCEL BUILD')
+            click.echo("-")
+            click.echo("-")
+        
+            try:
+                process_batch(build_sp_multi_optimized, sp_args, pool_size=batch_size)
+
+            except Exception as e:
+                logger.error(f"Error during SuperParcel build: {e}")
+                sys.exit(1)
+            
+            logger.info("BUILD COMPLETE.")
+            click.echo("_________________________________________________________")
+
+
+
+    else:
+        click.echo("Invalid function for nationwide build.")
+        sys.exit(1)

@@ -244,7 +244,12 @@ def sql_query(path, fips_list):
     Returns:
         str: The constructed SQL query string.
     """
-    if len(fips_list) == 1:
+    if fips_list == ['all']:
+        query = f"""
+            SELECT * FROM `{path}`
+        """
+        return query
+    elif len(fips_list) == 1:
         fips_list = f"('{fips_list[0]}')"
     else:
         fips_list = tuple(fips_list)
@@ -756,7 +761,7 @@ def process_result(result, meta, name):
     if name == 'spmulti_optimized':
         at = str(meta['at'])[-1]  # get last digit of area threshold
         formatted_dts = '_'.join(map(str, meta['dt']))
-        fn = build_filename('spmulti_opt', '-', f"dt{formatted_dts}", f"ss{meta['ss']}", f"at{at}")
+        fn = build_filename('spmulti_all', '-', f"dt{formatted_dts}", f"ss{meta['ss']}", f"at{at}")
 
     # Upload to BigQuery if enabled
     if meta['bq_upload']:
@@ -812,7 +817,8 @@ def process_batch(func, batch, pool_size):
             build_args, meta = parse_sp_args(task)
             # Submit the task asynchronously with a callback that processes the result immediately.
             async_result = pool.apply_async(func, args=build_args,
-                                            callback=lambda res, meta=meta: process_result(res, meta, name))
+                                            callback=lambda res, meta=meta: process_result(res, meta, name),
+                                            error_callback=lambda err: logger.error(f"Error in task: {err}"))
             async_results.append(async_result)
 
         for async_result in async_results:
