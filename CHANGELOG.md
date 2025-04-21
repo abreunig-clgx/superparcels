@@ -1,3 +1,12 @@
+## v0.3.1 - 2025-04-21
+
+- Bump version to 0.3.1
+- dt analysis func to nationwide cmd
+- spmulti handling complete; nationwide comd and validation run in progress
+- spmulti_optimal carto validation inprogress
+- multistep optimization draft and testing
+- Update changelog for v0.3.0
+
 ## v0.3.0 - 2025-04-14
 
 - Bump version to 0.3.0
