@@ -844,8 +844,11 @@ def nationwide(ctx, func, **kwargs):
             nationwide_owner_counts = pd.DataFrame()
             nationwide_dt_overlaps = pd.DataFrame()
             nationwide_dt_area_ratios = pd.DataFrame()
-          
+
+            count = 0
             for fips_batch in fip_batches:
+                count += 1
+                logger.info(f"Processing FIPS Batch {count} of {len(fip_batches)}")
                 click.echo('-')
                 click.echo('-')
                 click.echo('__________________________________________')
@@ -873,28 +876,28 @@ def nationwide(ctx, func, **kwargs):
                 for fips in candidate_gdf['fips'].unique():
                     filter_gdf = candidate_gdf[candidate_gdf['fips'] == fips] 
                     
-                    logger.info(f'Processing FIPS: {fips}...')
+                    #logger.info(f'Processing FIPS: {fips}...')
                     
 
                     # run owner counts for each distance threshold
-                    logger.info('Running owner counts...')
-                    owner_counts = dt_owner_counts(
-                        gdf=filter_gdf, 
-                        group_field='owner'
-                    )
-                    all_owner_counts = pd.concat([all_owner_counts, owner_counts], axis=0)
+                    #logger.info('Running owner counts...')
+                    #owner_counts = dt_owner_counts(
+                    #    gdf=filter_gdf, 
+                    #    group_field='owner'
+                    #)
+                    #all_owner_counts = pd.concat([all_owner_counts, owner_counts], axis=0)
                     
                     # run overlap analysis for each distance threshold
-                    logger.info('Running overlap analysis...')
-                    dt_overlaps = dt_overlap(
-                        gdf=filter_gdf,
-                        sp_id_field='sp_id',
-                        owner_field='owner'
-                    )
-                    all_dt_overlaps = pd.concat([all_dt_overlaps, dt_overlaps], axis=0)
+                    #logger.info('Running overlap analysis...')
+                    #dt_overlaps = dt_overlap(
+                    #    gdf=filter_gdf,
+                    #    sp_id_field='sp_id',
+                    #    owner_field='owner'
+                    #)
+                    #all_dt_overlaps = pd.concat([all_dt_overlaps, dt_overlaps], axis=0)
 
                     # run area ratio analysis
-                    logger.info('Running area ratio analysis...')
+                    #logger.info('Running area ratio analysis...')
                     dt_area_ratio_df = dt_area_ratio(
                         gdf=filter_gdf,
                         area_field='area_ratio'
@@ -903,8 +906,8 @@ def nationwide(ctx, func, **kwargs):
                     all_dt_area_ratios = pd.concat([all_dt_area_ratios, dt_area_ratio_df], ignore_index=True)
 
 
-                nationwide_owner_counts = pd.concat([nationwide_owner_counts, all_owner_counts], ignore_index=True)
-                nationwide_dt_overlaps = pd.concat([nationwide_dt_overlaps, all_dt_overlaps], ignore_index=True)
+                #nationwide_owner_counts = pd.concat([nationwide_owner_counts, all_owner_counts], ignore_index=True)
+                #nationwide_dt_overlaps = pd.concat([nationwide_dt_overlaps, all_dt_overlaps], ignore_index=True)
                 nationwide_dt_area_ratios = pd.concat([nationwide_dt_area_ratios, all_dt_area_ratios], ignore_index=True)
 
             logger.info('Writing files...')
