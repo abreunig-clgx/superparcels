@@ -32,5 +32,6 @@ def cli(ctx, verbose):
 cli.add_command(sp_cli.sp_cmds.config)
 cli.add_command(sp_cli.sp_cmds.build)
 cli.add_command(sp_cli.sp_cmds.dt_analysis)
+cli.add_command(sp_cli.sp_cmds.nationwide)
 
 
