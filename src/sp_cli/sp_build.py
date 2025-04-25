@@ -415,25 +415,25 @@ def build_sp_multi_optimized(
         If no valid clusters are produced, the function returns None.
     """
     try:
-        logger.info('Building super parcels with multiple distance thresholds...')
+        #logger.info('Building super parcels with multiple distance thresholds...')
         parcels = parcels.reset_index(drop=True)
         parcels['puid'] = parcels.index
 
         # Estimate UTM and transform CRS
         utm = parcels.estimate_utm_crs().to_epsg()
         parcels = parcels.to_crs(epsg=utm)  
-        logger.info(f'Using UTM CRS {utm}...')
+        #logger.info(f'Using UTM CRS {utm}...')
     
         all_superparcels = gpd.GeoDataFrame()  # Container for all resulting super parcels
 
-        logger.info('Using area threshold: {}'.format(area_threshold))
+        #logger.info('Using area threshold: {}'.format(area_threshold))
         
         first_pass_attempted = False
         sp_second_pass = gpd.GeoDataFrame()  # Container for second pass super parcels
         # Iterate over each provided distance threshold (epsilon)
         for eps in distance_thresholds:
             
-            logger.info(f'Clustering parcels for {fips} with threshold: {eps}...')
+            #logger.info(f'Clustering parcels for {fips} with threshold: {eps}...')
             candidate_clusters = (
                 parcels.groupby(key_field)
                 .apply(build_sindex_clusters, sample_size=sample_size, threshold=eps)
@@ -463,7 +463,7 @@ def build_sp_multi_optimized(
             cluster_puid_gb = candidate_clusters.groupby('cluster_ID')['puid'].apply(list).reset_index()
 
             # Build super parcels for the current threshold
-            logger.info(f'Building super parcels for {fips} with threshold: {eps}...')
+            #logger.info(f'Building super parcels for {fips} with threshold: {eps}...')
             
             sp = build_superparcels(
                 df=candidate_clusters,
@@ -473,7 +473,7 @@ def build_sp_multi_optimized(
             # Generate a unique super parcel identifier
             sp['sp_id'] = cluster_puid_gb['puid'].apply(hash_puids)
 
-            logger.info(f'Generated {sp.shape[0]} super parcels for {fips} with threshold: {eps}.')
+            #logger.info(f'Generated {sp.shape[0]} super parcels for {fips} with threshold: {eps}.')
             # Add additional attributes: fips, super parcel area and area ratio
             sp = add_attributes(
                 sp,
@@ -515,20 +515,20 @@ def build_sp_multi_optimized(
             return None
 
         # Remove overlapping parcels
-        logger.info('Removing overlaps...')
+        #logger.info('Removing overlaps...')
         all_superparcels = remove_overlap(all_superparcels)
         # Remove invalid geometries and log changes
-        logger.info(f'Shape before removing invalid geometries: {all_superparcels.shape}')
-        logger.info('Removing invalid geometries...')
+        #logger.info(f'Shape before removing invalid geometries: {all_superparcels.shape}')
+        #logger.info('Removing invalid geometries...')
         all_superparcels, _ = remove_invalid_geoms(all_superparcels)
-        logger.info(f'Shape after removing invalid geometries: {all_superparcels.shape}')
+        #logger.info(f'Shape after removing invalid geometries: {all_superparcels.shape}')
 
         # Select final desired columns and convert CRS to EPSG:4326
         all_superparcels = (
-            all_superparcels[['fips', 'sp_id', 'cluster_ID', key_field, 'pcount', 'area_ratio', 'p_area', 'sp_area', 'cbi', 'geometry']]
+            all_superparcels[['fips', 'sp_id', key_field, 'pcount', 'area_ratio', 'p_area', 'sp_area', 'cbi', 'geometry']]
             .to_crs(epsg=4326)
         )
-        logger.info(f'Finished building super parcels for {fips} with thresholds: {distance_thresholds}.')
+        #logger.info(f'Finished building super parcels for {fips} with thresholds: {distance_thresholds}.')
         return all_superparcels
     except Exception as e:
         logger.error(f'Error building super parcels for {fips}: {e}')

@@ -823,3 +823,20 @@ def process_batch(func, batch, pool_size):
 
         for async_result in async_results:
             async_result.wait()
+
+
+def format_timestamp(timestamp):
+    """
+    Format for file names.
+    eg.: timestamp = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+
+    """
+    return timestamp.strftime("%Y_%m_%d")
+
+def format_version(version):
+    """
+    Format for file names.
+    eg.: version = get_version()
+    """
+    return version.replace('.', '_')
+    

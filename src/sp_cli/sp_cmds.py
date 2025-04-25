@@ -1064,3 +1064,68 @@ def nationwide(ctx, func, **kwargs):
     else:
         click.echo("Invalid function for nationwide build.")
         sys.exit(1)
+
+
+@click.group(help='BEAM ME UP SCOTTY!.')
+@click.pass_context
+def beam(ctx):
+    if ctx.obj["VERBOSE"]:
+        logger.setLevel(logging.DEBUG)
+
+@beam.command(
+    help="""
+    Pipeline Numero Uno:
+    
+    Big Query to Parquet Staging Location. 
+    
+    """)
+@click.option('-o', '--output-path', type=click.Path(exists=False), default=None, required=True,
+              help="Output bucket dir. Example: gs://bucket_name/path/to/output")
+@click.option('-po', '--pipe-options', multiple=True, default=None, help="Options if sp pipeline is selected. Key Value pairs seperated by '='. No Spaces.", callback=parse_key_value)
+@click.pass_context
+def bq2pq(ctx, output_path, pipe_options):
+    from sp_cli.runners import bigq2parquet_runner
+
+    bigq2parquet_runner(
+        pipeline_options=pipe_options,
+        output_prefix=output_path,
+    )
+
+@beam.command(
+    help="""
+    Pipeline Numero Dos:
+
+    SuperParcel Build using Multi-Step Eps.
+    """
+)
+@click.option('-i', '--input-pattern', type=click.Path(exists=False), default=None, required=True,
+              help="Input pattern for the parquets. Example: gs://bucket_name/path/to/parquet/*.parquet")
+@click.option('-o', '--output-dir', type=click.Path(exists=False), default=None, required=True,
+                help="Output bucket dir. Example: gs://bucket_name/path/to/output")
+@click.option('-dt', '--dist-thres', default=None, multiple=True,
+                help="Distance threshold list for Multi-Step clustering. Comma-seperated. No Spaces. Default is 200.", callback=parse_to_int_list)
+@click.option('-ss', '--sample-size', type=int, default=3,
+                help="Minimum number of samples for clustering. Default is 3.")
+@click.option('-at', '--area-threshold', type=float, default=0.7, 
+                help="Area Ratio Threshold for Multi-Step clustering. Values between 0 and 1. Default is 0.7.")
+@click.pass_context
+def superparcels(ctx, input_pattern, output_dir, dist_thres, sample_size, area_threshold):
+        from sp_cli.runners import superparcel_runner
+
+        timestamp = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+        version = ctx.obj["VERSION"]
+
+        cli_options = {
+            'output_dir': output_dir,
+            'dist_thres': dist_thres,
+            'sample_size': sample_size,
+            'area_threshold': area_threshold,
+            'timestamp': timestamp,
+            'version': version,
+        }
+        
+        superparcel_runner(
+            input_glob=input_pattern,
+            pipeline_options=None, # will add later
+            cli_options=cli_options,
+        )
