@@ -1065,8 +1065,13 @@ def nationwide(ctx, func, **kwargs):
         click.echo("Invalid function for nationwide build.")
         sys.exit(1)
 
+class OrderedGroup(click.Group):
+    def list_commands(self, ctx):
+        """Return commands in the order they were defined."""
+        return list(self.commands.keys())
+   
 
-@click.group(help='BEAM ME UP SCOTTY!.')
+@click.group(help='BEAM ME UP SCOTTY!.', cls=OrderedGroup)
 @click.pass_context
 def beam(ctx):
     if ctx.obj["VERBOSE"]:
@@ -1094,8 +1099,8 @@ def bq2pq(ctx, output_path, pipe_options):
 @beam.command(
     help="""
     Pipeline Numero Dos:
-
     SuperParcel Build using Multi-Step Eps.
+
     """
 )
 @click.option('-i', '--input-pattern', type=click.Path(exists=False), default=None, required=True,
@@ -1129,3 +1134,24 @@ def superparcels(ctx, input_pattern, output_dir, dist_thres, sample_size, area_t
             pipeline_options=None, # will add later
             cli_options=cli_options,
         )
+
+@beam.command(
+    help="""
+    Pipeline Numero Tres:
+    Writing output parquets to BigQuery.
+
+    """
+)
+@click.option('-i', '--input-pattern', type=click.Path(exists=False), default=None, required=True,
+              help="Input pattern for the parquets. Example: gs://bucket_name/path/to/parquet/*.parquet")
+@click.option('-o', '--output-table', type=click.Path(exists=False), default=None, required=True,
+                help="Output BigQuery table. Example: project_id.dataset_id.table_id")
+@click.pass_context
+def pq2bq(ctx, input_pattern, output_table):
+    from sp_cli.runners import parquet2bigq_runner
+
+    parquet2bigq_runner(
+        input_glob=input_pattern,
+        bq_output_table=output_table,
+        pipeline_options=None, # will add later
+    )
