@@ -3,7 +3,7 @@ from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.io.gcp.bigquery import ReadFromBigQuery
 from apache_beam.io.filesystems import FileSystems
 from apache_beam.io.fileio import MatchFiles
-
+import sys
 from shapely.geometry import base
 import pandas as pd
 import geopandas as gpd
@@ -59,13 +59,20 @@ class RunSuperparcelCLI(beam.DoFn):
         output_name = os.path.basename(filepath).replace('.parquet', '_sp.parquet')
         at_fn = str(self.area_threshold)[-1]  # get last digit of area threshold
         formatted_dts = '_'.join(map(str, self.dist_thres))
+
         build_type_subdir = build_filename('spmulti', '-', f"dt{formatted_dts}", f"ss3", f"at{at_fn}")
-        fn_output_path = os.path.join(
+
+        output_build_dir = os.path.join(
             self.output_dir, 
             f'v{format_version(self.version)}', 
             format_timestamp(self.timestamp), 
-            build_type_subdir,
-            output_name)
+            build_type_subdir
+        )
+
+        fn_output_path = os.path.join(
+            output_build_dir,
+            output_name
+        )
         
         try:
             input_gdf = gpd.read_parquet(filepath)
@@ -113,7 +120,7 @@ class RunSuperparcelCLI(beam.DoFn):
             schema = generate_bq_schema(result)
 
             # Save schema JSON
-            schema_output_path = output_path.replace(".parquet", "_schema.json")
+            schema_output_path = os.path.join(output_build_dir, "schema.json")
             with FileSystems.create(schema_output_path) as f:
                 f.write(json.dumps(schema).encode('utf-8'))
 
@@ -123,6 +130,20 @@ class RunSuperparcelCLI(beam.DoFn):
 
         except subprocess.CalledProcessError as e:
             yield f"❌ Failure for {filepath}:\n{e.stderr}"
+
+
+class ReadSchemaFromGCS(beam.DoFn):
+    def __init__(self, schema_path):
+        self.schema_path = schema_path
+
+    def setup(self):
+        # Only read once per worker
+        with FileSystems.open(self.schema_path) as f:
+            schema_bytes = f.read()
+            self.schema = json.loads(schema_bytes)
+
+    def process(self, element):
+        yield self.schema
 
 
 class ReadParquetAndConvertToDict(beam.DoFn):
@@ -155,6 +176,16 @@ def parquet2bigq_runner(input_glob, bq_output_table, pipeline_options):
             save_main_session=True,
             service_account_email='dataflow-service-account@clgx-gis-app-dev-06e3.iam.gserviceaccount.com'
         )
+    
+    # schema pipeline for input to second pipeline
+    schema_path = os.path.dirname(input_glob) + '/schema.json'
+    logger.info(f"Schema path: {schema_path}")
+    # Read schema BEFORE starting pipeline
+    with FileSystems.open(schema_path) as f:
+        schema_json = json.loads(f.read())
+       
+       
+
     with beam.Pipeline(options=options) as p:
         (
             p
@@ -163,7 +194,7 @@ def parquet2bigq_runner(input_glob, bq_output_table, pipeline_options):
             | "Read Parquet and Convert" >> beam.ParDo(ReadParquetAndConvertToDict())
             | "Write to BigQuery" >> beam.io.WriteToBigQuery(
                 table=bq_output_table,
-                schema=schema,
+                schema=schema_json,
                 create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED,
                 write_disposition=beam.io.BigQueryDisposition.WRITE_APPEND,
             )
