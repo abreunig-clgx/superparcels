@@ -196,4 +196,4 @@ sps build spfixed -dt 30,50
 ###### Build superparcels for 06075 and write *only* to local (shapefiles), verbose
 ```
 sps -v build spfixed -fips 06075 -local true --bq-upload false
-```# spatial_us-gis-wfrs
+```
