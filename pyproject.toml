@@ -9,7 +9,7 @@ requires-python = ">=3.11"
 description = "CLI tool for SuperParcel Library"
 readme = "README.md"
 license = {text = "MIT"}
-authors = [{name = "Austin Breunig", email = "abreunig@corelogic.com"}]
+authors = [{name = "Austin Breunig", email = "abreunig@cotality.com"}]
 dependencies = [
     "click",
     "geopandas",
@@ -20,7 +20,8 @@ dependencies = [
     "google-cloud-bigquery",
     "pyarrow",
     "db-dtypes",
-    "platformdirs"
+    "platformdirs",
+    "networkx"
 ]
 
 [project.scripts]

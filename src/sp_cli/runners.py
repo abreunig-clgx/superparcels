@@ -163,7 +163,7 @@ class ReadParquetAndConvertToDict(beam.DoFn):
                 yield record
 
     
-
+# PIPELINE 3: Read from GeoParquet, write to BigQuery
 def parquet2bigq_runner(input_glob, bq_output_table, pipeline_options):
     
     options = PipelineOptions(
@@ -200,7 +200,7 @@ def parquet2bigq_runner(input_glob, bq_output_table, pipeline_options):
             )
         )
 
-
+# PIPELINE 2: Read from GeoParquet, run CLI, write to GeoParquet
 def superparcel_runner(input_glob, pipeline_options, cli_options):
     
     options = PipelineOptions(
@@ -223,7 +223,7 @@ def superparcel_runner(input_glob, pipeline_options, cli_options):
             | "Log Output" >> beam.Map(print)
         )
 
-
+# PIPELINE 1: Read from BigQuery, write to GeoParquet
 # bucket: geospatial-projects/super_parcels/geoparquet
 def bigq2parquet_runner(pipeline_options, output_prefix):
     options = PipelineOptions(
