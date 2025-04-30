@@ -1,3 +1,22 @@
+## v0.3.2 - 2025-04-30
+
+- Bump version to 0.3.2
+- local container running beam pipeline
+- Revert "first commit"
+- first commit
+- pipe3 tested
+- inprogress schema extraction
+- pipe1 and 2 complete using dr and integrated into CLI
+- dr module for import to cli and run sp_geoprocessing tools
+- Merge branch 'dev' into dataflow
+- Merge branch 'master' into dev
+- fip batch counter
+- Update changelog for v0.3.1
+- Merge branch 'master' into dataflow
+- update dockerfile
+- update docker and runner
+- dockerfile draft
+
 ## v0.3.1 - 2025-04-21
 
 - Bump version to 0.3.1
